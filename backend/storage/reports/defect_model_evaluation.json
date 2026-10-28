@@ -1,0 +1,163 @@
+{
+  "source": "synthetic benchmark: 200 images, seed 2026",
+  "iou": 0.5,
+  "operating_conf": 0.35,
+  "results": [
+    {
+      "engine": "onnx",
+      "map50": 0.254,
+      "precision": 0.672,
+      "recall": 0.282,
+      "image_accuracy": 0.705,
+      "image_counts": {
+        "tp": 105,
+        "fp": 0,
+        "tn": 36,
+        "fn": 59
+      },
+      "avg_latency_ms": 18.8,
+      "per_class": {
+        "SCRATCH": {
+          "gt": 72,
+          "tp": 37,
+          "fp": 17,
+          "precision": 0.685,
+          "recall": 0.514,
+          "f1": 0.587,
+          "ap50": 0.502
+        },
+        "CRACK": {
+          "gt": 82,
+          "tp": 0,
+          "fp": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "ap50": 0.0
+        },
+        "DENT": {
+          "gt": 73,
+          "tp": 0,
+          "fp": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "ap50": 0.0
+        },
+        "DISCOLOURATION": {
+          "gt": 78,
+          "tp": 49,
+          "fp": 24,
+          "precision": 0.671,
+          "recall": 0.628,
+          "f1": 0.649,
+          "ap50": 0.514
+        }
+      }
+    },
+    {
+      "engine": "opencv",
+      "map50": 0.605,
+      "precision": 0.688,
+      "recall": 0.679,
+      "image_accuracy": 1.0,
+      "image_counts": {
+        "tp": 164,
+        "fp": 0,
+        "tn": 36,
+        "fn": 0
+      },
+      "avg_latency_ms": 164.9,
+      "per_class": {
+        "SCRATCH": {
+          "gt": 72,
+          "tp": 70,
+          "fp": 5,
+          "precision": 0.933,
+          "recall": 0.972,
+          "f1": 0.952,
+          "ap50": 0.958
+        },
+        "CRACK": {
+          "gt": 82,
+          "tp": 71,
+          "fp": 3,
+          "precision": 0.959,
+          "recall": 0.866,
+          "f1": 0.91,
+          "ap50": 0.851
+        },
+        "DENT": {
+          "gt": 73,
+          "tp": 8,
+          "fp": 66,
+          "precision": 0.108,
+          "recall": 0.11,
+          "f1": 0.109,
+          "ap50": 0.017
+        },
+        "DISCOLOURATION": {
+          "gt": 78,
+          "tp": 58,
+          "fp": 20,
+          "precision": 0.744,
+          "recall": 0.744,
+          "f1": 0.744,
+          "ap50": 0.596
+        }
+      }
+    },
+    {
+      "engine": "hybrid",
+      "map50": 0.604,
+      "precision": 0.634,
+      "recall": 0.682,
+      "image_accuracy": 1.0,
+      "image_counts": {
+        "tp": 164,
+        "fp": 0,
+        "tn": 36,
+        "fn": 0
+      },
+      "avg_latency_ms": 184.6,
+      "per_class": {
+        "SCRATCH": {
+          "gt": 72,
+          "tp": 71,
+          "fp": 21,
+          "precision": 0.772,
+          "recall": 0.986,
+          "f1": 0.866,
+          "ap50": 0.968
+        },
+        "CRACK": {
+          "gt": 82,
+          "tp": 71,
+          "fp": 3,
+          "precision": 0.959,
+          "recall": 0.866,
+          "f1": 0.91,
+          "ap50": 0.851
+        },
+        "DENT": {
+          "gt": 73,
+          "tp": 8,
+          "fp": 67,
+          "precision": 0.107,
+          "recall": 0.11,
+          "f1": 0.108,
+          "ap50": 0.017
+        },
+        "DISCOLOURATION": {
+          "gt": 78,
+          "tp": 58,
+          "fp": 29,
+          "precision": 0.667,
+          "recall": 0.744,
+          "f1": 0.703,
+          "ap50": 0.58
+        }
+      }
+    }
+  ]
+}

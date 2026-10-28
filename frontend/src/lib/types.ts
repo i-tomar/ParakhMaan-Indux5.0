@@ -299,6 +299,7 @@ export interface DefectDetectorStatus {
   opencv_version: string;
   model_loaded: boolean;
   model_path: string | null;
+  model_input_size?: number | null;
   model_classes: string[];
   model_error: string | null;
   defect_types: string[];

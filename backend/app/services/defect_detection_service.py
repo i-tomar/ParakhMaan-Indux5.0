@@ -1,13 +1,14 @@
 import base64
 import math
 import os
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
 
-from app.core.config import settings
+from app.core.config import resolve_backend_path, settings
 
 DEFECT_TYPES = ["SCRATCH", "CRACK", "DENT", "DISCOLOURATION", "DIMENSIONAL_ANOMALY"]
 SEVERITY_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
@@ -119,42 +120,73 @@ class DefectDetector:
     WORK_MAX_SIDE = 1024
     MAX_DETECTIONS = 40
 
-    def __init__(self):
-        self.backend = (settings.DEFECT_DETECTOR_BACKEND or "hybrid").lower()
+    def __init__(self, model_path: Optional[str] = None, model_classes: Optional[str] = None, backend: Optional[str] = None):
+        self.backend = (backend or settings.DEFECT_DETECTOR_BACKEND or "hybrid").lower()
+        self._model_path = resolve_backend_path(settings.DEFECT_MODEL_PATH if model_path is None else model_path)
+        self._class_spec = settings.DEFECT_MODEL_CLASSES if model_classes is None else model_classes
         self._net = None
+        self._input_size = 0
         self._classes: List[str] = []
         self._model_error: Optional[str] = None
+        # cv2.dnn.Net is not thread-safe and FastAPI serves sync endpoints from a thread pool.
+        self._net_lock = threading.Lock()
         self._load_model()
 
     # ------------------------------------------------------------------ model plug-in
     def _load_model(self) -> None:
-        path = settings.DEFECT_MODEL_PATH
+        path = self._model_path
         if not path:
             return
         if not os.path.exists(path):
             self._model_error = f"Model file not found: {path}"
             return
         try:
-            self._net = cv2.dnn.readNetFromONNX(path)
+            net = cv2.dnn.readNetFromONNX(path)
         except Exception as e:
-            self._net = None
             self._model_error = f"Failed to load ONNX model: {e}"
             return
 
-        if settings.DEFECT_MODEL_CLASSES:
-            self._classes = [c.strip() for c in settings.DEFECT_MODEL_CLASSES.split(",") if c.strip()]
+        if self._class_spec:
+            self._classes = [c.strip() for c in self._class_spec.split(",") if c.strip()]
         else:
-            names_path = os.path.splitext(path)[0] + ".names"
-            if os.path.exists(names_path):
+            folder = os.path.dirname(path)
+            candidates = [os.path.splitext(path)[0] + ".names"] + sorted(
+                os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".names")
+            )
+            names_path = next((p for p in candidates if os.path.exists(p)), None)
+            if names_path:
                 with open(names_path, "r", encoding="utf-8") as f:
                     self._classes = [line.strip() for line in f if line.strip()]
+
+        # Exports usually have a fixed input size; probe for it instead of relying on configuration.
+        sizes = [settings.DEFECT_MODEL_INPUT_SIZE] if settings.DEFECT_MODEL_INPUT_SIZE > 0 else []
+        sizes += [s for s in (640, 320, 416, 512, 1280) if s not in sizes]
+        previous_log_level = cv2.setLogLevel(0)  # wrong sizes make OpenCV log shape errors
+        try:
+            for size in sizes:
+                try:
+                    net.setInput(cv2.dnn.blobFromImage(np.zeros((size, size, 3), np.uint8), 1 / 255.0, (size, size), swapRB=True))
+                    out = np.squeeze(net.forward())
+                except cv2.error:
+                    continue
+                if out.ndim == 2:
+                    self._net, self._input_size = net, size
+                    outputs = min(out.shape) - 4
+                    if self._classes and outputs not in (len(self._classes), len(self._classes) + 1):
+                        self._model_error = f"Model has {outputs} class outputs but {len(self._classes)} class names were given"
+                    break
+        finally:
+            cv2.setLogLevel(previous_log_level)
+        if self._net is None:
+            self._model_error = f"ONNX model did not accept any input size in {sizes}"
 
     def status(self) -> Dict[str, Any]:
         return {
             "backend": self.backend,
             "opencv_version": cv2.__version__,
             "model_loaded": self._net is not None,
-            "model_path": settings.DEFECT_MODEL_PATH or None,
+            "model_path": self._model_path or None,
+            "model_input_size": self._input_size or None,
             "model_classes": self._classes,
             "model_error": self._model_error,
             "defect_types": DEFECT_TYPES,
@@ -198,8 +230,7 @@ class DefectDetector:
             cv_dets, product_mask_used = self._detect_opencv(work, ref_work)
             for d in cv_dets:
                 d["bbox"] = [v / scale for v in d["bbox"]]
-            model_boxes = [d["bbox"] for d in detections]
-            detections.extend(d for d in cv_dets if all(_iou(d["bbox"], b) < 0.3 for b in model_boxes))
+            detections = self._fuse(detections, cv_dets)
             backends.append("OPENCV")
 
         detections = [self._finalize(d, w0, h0) for d in detections]
@@ -552,6 +583,35 @@ class DefectDetector:
                     "surface_area_ratio": round(area_frac, 4),
                 },
             })
+        return self._merge_dent_lobes(dets)
+
+    @staticmethod
+    def _merge_dent_lobes(dets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Under directional light one dent shows a dark and a bright lobe side by side; report it once."""
+        merged = True
+        while merged and len(dets) > 1:
+            merged = False
+            for i in range(len(dets)):
+                for j in range(i + 1, len(dets)):
+                    a, b = dets[i]["bbox"], dets[j]["bbox"]
+                    gap = 0.5 * max(a[2] - a[0], a[3] - a[1], b[2] - b[0], b[3] - b[1])
+                    if a[0] - gap < b[2] and b[0] - gap < a[2] and a[1] - gap < b[3] and b[1] - gap < a[3]:
+                        ma, mb = dets[i]["metrics"], dets[j]["metrics"]
+                        dets[i] = {
+                            **dets[i],
+                            "bbox": [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])],
+                            "confidence": max(dets[i]["confidence"], dets[j]["confidence"]),
+                            "metrics": {
+                                **ma,
+                                "shading_depth": max(ma["shading_depth"], mb["shading_depth"]),
+                                "surface_area_ratio": round(ma["surface_area_ratio"] + mb["surface_area_ratio"], 4),
+                            },
+                        }
+                        del dets[j]
+                        merged = True
+                        break
+                if merged:
+                    break
         return dets
 
     def _detect_dimensional(
@@ -635,16 +695,17 @@ class DefectDetector:
 
     # ------------------------------------------------------------------ ONNX (YOLOv8 export)
     def _detect_onnx(self, img: np.ndarray) -> List[Dict[str, Any]]:
-        size = settings.DEFECT_MODEL_INPUT_SIZE
+        size = self._input_size
         h, w = img.shape[:2]
         r = size / float(max(h, w))
-        resized = cv2.resize(img, (int(round(w * r)), int(round(h * r))))
+        resized = cv2.resize(img, (int(round(w * r)), int(round(h * r))), interpolation=cv2.INTER_AREA)
         canvas = np.full((size, size, 3), 114, dtype=np.uint8)
         canvas[: resized.shape[0], : resized.shape[1]] = resized
 
         blob = cv2.dnn.blobFromImage(canvas, 1 / 255.0, (size, size), swapRB=True, crop=False)
-        self._net.setInput(blob)
-        out = np.squeeze(self._net.forward())
+        with self._net_lock:
+            self._net.setInput(blob)
+            out = np.squeeze(self._net.forward())
         if out.ndim != 2:
             return []
         if out.shape[0] < out.shape[1]:
@@ -680,6 +741,44 @@ class DefectDetector:
         return dets
 
     # ------------------------------------------------------------------ post-processing
+    @staticmethod
+    def _fuse(model_dets: List[Dict[str, Any]], cv_dets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Hybrid merge. A model and an OpenCV detection of the same type on the same region are one
+        defect: OpenCV's measurements are kept (they drive severity grading) and the independent
+        agreement raises confidence. Everything else from either engine is kept as-is.
+        """
+        def overlaps(a: List[float], b: List[float]) -> bool:
+            if _iou(a, b) >= 0.3:
+                return True
+            ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+            iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+            smaller = min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1]))
+            return smaller > 0 and ix * iy >= 0.6 * smaller
+
+        fused: List[Dict[str, Any]] = []
+        matched_cv = set()
+        for m in model_dets:
+            match = next(
+                (i for i, c in enumerate(cv_dets)
+                 if i not in matched_cv and c["defect_type"] == m["defect_type"] and overlaps(m["bbox"], c["bbox"])),
+                None,
+            )
+            if match is None:
+                fused.append(m)
+                continue
+            matched_cv.add(match)
+            c = cv_dets[match]
+            fused.append({
+                **c,
+                "confidence": min(0.99, 1.0 - (1.0 - c["confidence"]) * (1.0 - m["confidence"])),
+                "detector": "ONNX+OPENCV",
+                "metrics": {**c.get("metrics", {}), "model_class": m["metrics"].get("model_class"),
+                            "model_confidence": round(m["confidence"], 3)},
+            })
+        fused.extend(c for i, c in enumerate(cv_dets) if i not in matched_cv)
+        return fused
+
     @staticmethod
     def _nms(dets: List[Dict[str, Any]], iou_thr: float) -> List[Dict[str, Any]]:
         def area(b: List[float]) -> float:

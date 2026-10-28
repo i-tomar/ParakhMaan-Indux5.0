@@ -15,14 +15,15 @@ services:
       - REPORTS_DIR=/app/storage/reports
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - LLM_MODEL=qwen2.5:7b
-      # Defect Inspection mode: hybrid | opencv | onnx. Mount a YOLOv8 ONNX export and set
-      # DEFECT_MODEL_PATH (+ DEFECT_MODEL_CLASSES) to enable the deep-learning detector.
+      # Defect Inspection mode: hybrid (YOLOv8 ONNX + OpenCV) | opencv | onnx
       - DEFECT_DETECTOR_BACKEND=hybrid
-      - DEFECT_MODEL_PATH=
-      - DEFECT_MODEL_CLASSES=
+      - DEFECT_MODEL_PATH=storage/models/best.onnx
+      - DEFECT_MODEL_CLASSES=scratch,crack,dent,discolouration
       - DEFECT_SAMPLES_DIR=/app/storage/defect_samples
     volumes:
       - backend_storage:/app/storage
+      # Bind-mounted so the model is present even when backend_storage already exists
+      - ./backend/storage/models:/app/storage/models:ro
     restart: unless-stopped
 
   frontend:

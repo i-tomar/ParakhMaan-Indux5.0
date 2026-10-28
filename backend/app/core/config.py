@@ -28,10 +28,12 @@ class Settings(BaseSettings):
     # Defect Inspection mode
     # DEFECT_DETECTOR_BACKEND: "hybrid" (ONNX model if present + OpenCV), "opencv", or "onnx"
     DEFECT_DETECTOR_BACKEND: str = os.getenv("DEFECT_DETECTOR_BACKEND", "hybrid")
-    # Optional YOLOv8-style ONNX export; classes come from DEFECT_MODEL_CLASSES or a sidecar <model>.names file
+    # Optional YOLOv8-style ONNX export (relative paths resolve against the backend folder);
+    # classes come from DEFECT_MODEL_CLASSES or a .names file next to the model
     DEFECT_MODEL_PATH: str = os.getenv("DEFECT_MODEL_PATH", "")
     DEFECT_MODEL_CLASSES: str = os.getenv("DEFECT_MODEL_CLASSES", "")
-    DEFECT_MODEL_INPUT_SIZE: int = int(os.getenv("DEFECT_MODEL_INPUT_SIZE", "640"))
+    # 0 = detect the export's fixed input size automatically
+    DEFECT_MODEL_INPUT_SIZE: int = int(os.getenv("DEFECT_MODEL_INPUT_SIZE", "0"))
     DEFECT_MODEL_CONF_THRESHOLD: float = float(os.getenv("DEFECT_MODEL_CONF_THRESHOLD", "0.35"))
     DEFECT_SAMPLES_DIR: str = os.getenv("DEFECT_SAMPLES_DIR", str(BASE_DIR / "storage" / "defect_samples"))
     
@@ -46,8 +48,18 @@ class Settings(BaseSettings):
 
     class Config:
         case_sensitive = True
+        # Real environment variables (docker-compose, shell) take precedence over this file.
+        env_file = str(BASE_DIR / ".env")
+        extra = "ignore"
 
 settings = Settings()
+
+def resolve_backend_path(path: str) -> str:
+    """Absolute paths are kept; relative ones are anchored at the backend folder, not the CWD."""
+    if not path:
+        return path
+    p = Path(path)
+    return str(p if p.is_absolute() else BASE_DIR / p)
 
 # Ensure storage directories exist
 os.makedirs(settings.STORAGE_DIR, exist_ok=True)

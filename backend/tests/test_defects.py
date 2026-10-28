@@ -1,4 +1,5 @@
 import base64
+import os
 from datetime import datetime, timedelta, timezone
 
 import cv2
@@ -13,7 +14,10 @@ from app.services.defect_detection_service import (
 )
 
 client = TestClient(app)
-detector = DefectDetector()
+detector = DefectDetector(model_path="", backend="opencv")
+
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "storage", "models", "best.onnx")
+requires_model = pytest.mark.skipif(not os.path.exists(MODEL_PATH), reason="trained ONNX model not present")
 
 
 def _types(result):
@@ -92,6 +96,61 @@ def test_outcome_ignores_rejected_detections():
     assert compute_outcome(dets) == "PASS"
     dets[0]["reviewer_status"] = "CONFIRMED"
     assert compute_outcome(dets) == "DEFECTIVE"
+
+
+# ---------------------------------------------------------------- ONNX model / hybrid
+def test_fuse_merges_same_type_and_keeps_different_types():
+    model = [
+        {"defect_type": "DISCOLOURATION", "bbox": [100, 100, 200, 200], "confidence": 0.8, "detector": "ONNX",
+         "metrics": {"method": "yolo_onnx", "model_class": "discolouration"}},
+        {"defect_type": "DENT", "bbox": [400, 400, 450, 450], "confidence": 0.6, "detector": "ONNX",
+         "metrics": {"method": "yolo_onnx", "model_class": "dent"}},
+    ]
+    cv = [
+        {"defect_type": "DISCOLOURATION", "bbox": [110, 105, 205, 210], "confidence": 0.7, "detector": "OPENCV",
+         "metrics": {"method": "cielab_colour_deviation", "mean_delta_e": 25.0}},
+        {"defect_type": "SCRATCH", "bbox": [400, 400, 460, 455], "confidence": 0.9, "detector": "OPENCV",
+         "metrics": {"method": "morphological_line_extraction"}},
+    ]
+    fused = DefectDetector._fuse(model, cv)
+    by_type = {d["defect_type"]: d for d in fused}
+    assert len(fused) == 3
+    assert by_type["DISCOLOURATION"]["detector"] == "ONNX+OPENCV"
+    assert by_type["DISCOLOURATION"]["metrics"]["mean_delta_e"] == 25.0  # OpenCV measurements kept
+    assert by_type["DISCOLOURATION"]["confidence"] == pytest.approx(1 - 0.2 * 0.3)
+    assert by_type["DENT"]["detector"] == "ONNX"  # different type on the same spot is not dropped
+    assert by_type["SCRATCH"]["detector"] == "OPENCV"
+
+
+@requires_model
+def test_trained_model_loads_with_probed_input_size():
+    hybrid = DefectDetector(model_path=MODEL_PATH, model_classes="scratch,crack,dent,discolouration", backend="hybrid")
+    status = hybrid.status()
+    assert status["model_loaded"] is True
+    assert status["model_error"] is None
+    assert status["model_input_size"] == 320
+    assert status["model_classes"] == ["scratch", "crack", "dent", "discolouration"]
+
+
+@requires_model
+def test_relative_model_path_and_names_file_are_resolved():
+    hybrid = DefectDetector(model_path="storage/models/best.onnx", model_classes="", backend="hybrid")
+    assert hybrid.status()["model_loaded"] is True
+    assert hybrid.status()["model_classes"] == ["scratch", "crack", "dent", "discolouration"]
+
+
+@requires_model
+def test_hybrid_pipeline_uses_model_and_opencv():
+    hybrid = DefectDetector(model_path=MODEL_PATH, model_classes="scratch,crack,dent,discolouration", backend="hybrid")
+    result = hybrid.detect(synthesize_surface_sample(["DISCOLOURATION", "CRACK"]))
+    assert result["backend"] == "ONNX+OPENCV"
+    detectors = {d["detector"] for d in result["detections"]}
+    assert any("ONNX" in d for d in detectors)
+    assert "CRACK" in _types(result) and "DISCOLOURATION" in _types(result)
+    assert hybrid.detect(synthesize_surface_sample([]))["detections"] == []
+
+    onnx_only = DefectDetector(model_path=MODEL_PATH, model_classes="scratch,crack,dent,discolouration", backend="onnx")
+    assert onnx_only.detect(synthesize_surface_sample(["DISCOLOURATION"]))["backend"] == "ONNX"
 
 
 # ---------------------------------------------------------------- analytics

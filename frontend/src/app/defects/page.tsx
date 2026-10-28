@@ -216,7 +216,9 @@ export default function DefectInspectionPage() {
             title={status.model_error || status.model_path || 'Set DEFECT_MODEL_PATH to plug in a YOLOv8 ONNX model'}
           >
             {status.model_loaded
-              ? `Deep-learning model loaded (${status.model_classes.length} classes)`
+              ? `YOLOv8 ONNX model loaded · ${status.model_classes.join(', ')}${status.model_input_size ? ` · ${status.model_input_size}px` : ''}`
+              : status.model_error
+              ? `Deep-learning model error: ${status.model_error}`
               : 'Deep-learning model: not configured (classical CV active)'}
           </span>
         </div>
