@@ -194,78 +194,84 @@ Pages: `/defects` (new inspection + recent list), `/defects/[id]` (overlay, defe
 
 ---
 
+## 🏗️ Scalable Platform Architecture
+
+> 📘 Phase write-ups: **[PHASE_A.md](PHASE_A.md)** (scalable foundation + roadmap incl. federated learning) · **[PHASE_B.md](PHASE_B.md)** (governed automated learning loop)
+
+```
+ Camera / phone ──► Edge node (app.edge.main) ── inference + durable outbox ──┐   (keeps inspecting offline)
+                                                                              ▼  X-Device-Key
+ Browser ──► Next.js ──► FastAPI API ──► PostgreSQL (Alembic migrations)
+                            │   │
+                            │   └──► S3-compatible object storage (images via signed URLs)
+                            └──► Redis queue ──► RQ workers (video analysis; scale horizontally)
+```
+
+| Concern | Local development | docker compose / production |
+| :--- | :--- | :--- |
+| Database | SQLite file | PostgreSQL 16 (`DATABASE_URL`) |
+| Schema | Alembic, auto-run on API start | same (`AUTO_MIGRATE`), existing DBs are stamped then upgraded |
+| Files | `backend/storage` | S3 / RustFS (`STORAGE_BACKEND=s3`), browser access only via HMAC-signed, expiring links |
+| Background jobs | in-process thread pool | Redis + `python -m app.workers.worker` (any number of workers) |
+| Edge | optional | `--profile edge`; results queue locally and sync with retry/back-off, idempotent on the server |
+
+**Multi-tenant structure:** organisation → plant → production line → station, plus products. Every inspection, user, job and edge device belongs to an organisation, and every API query is scoped to the caller's organisation (another tenant's records return 404).
+
+**Roles (enforced by the API, mirrored in the UI):**
+
+| Role | Can |
+| :--- | :--- |
+| Operator | Run inspections (image / camera / video), give detection feedback |
+| Quality Manager | Operator rights + finalise / override outcomes, view analytics |
+| Administrator | Everything + plants/lines/stations, products, users, edge devices, demo data |
+| Auditor | Read-only access to inspections, evidence, reports and analytics |
+
+**Security defaults:** no anonymous access (the old "default inspector" fallback is gone), no public self-registration (admins create users), bcrypt password hashing with transparent upgrade of legacy hashes, login rate limiting, explicit CORS origins, upload validation by file signature / size / pixel count, storage never publicly mounted, per-device API keys stored as HMAC hashes. With `ENVIRONMENT=production` the API refuses to start with a default `SECRET_KEY`, wildcard CORS, or demo seeding enabled.
+
+---
+
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- **Python**: 3.11+ (Tested on Python 3.13)
-- **Node.js**: 18.x or 20.x (Tested with npm 10+)
-- **Optional (for Local LLM)**: Docker & Docker Compose or [Ollama](https://ollama.com)
+- **Python**: 3.11+ (tested on 3.13) · **Node.js**: 20+ (tested on 24 / npm 11)
+- **Optional**: Docker Desktop for the full stack, [Ollama](https://ollama.com) for the Legal Metrology LLM explanations
 
----
+### Option 1: Local development (no extra services)
 
-### Option 1: Running Locally (Fastest)
-
-#### 1. Start the Backend (FastAPI on Port 8080)
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Create and activate virtual environment (optional but recommended)
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run unit tests to verify system integrity
-python -m pytest tests
-
-# Start FastAPI application
-python -m uvicorn app.main:app --port 8080 --host 0.0.0.0 --reload
+pip install -r requirements-dev.txt
+python -m pytest tests                                      # 59 tests
+python -m uvicorn app.main:app --port 8080 --reload         # migrates the SQLite DB on start
 ```
-- **API Swagger Docs**: [http://localhost:8080/docs](http://localhost:8080/docs)
-- **API Health Check**: [http://localhost:8080/api/health](http://localhost:8080/api/health)
 
-#### 2. Start the Frontend (Next.js on Port 3000)
 ```bash
-# Open a new terminal and navigate to frontend directory
 cd frontend
-
-# Install Node dependencies
 npm install
-
-# Start Next.js development server
-npm run dev
+npm run dev                                                 # http://localhost:3000
 ```
-- **Web Platform**: [http://localhost:3000](http://localhost:3000)
-- **Rules & Inspector Tools**: [http://localhost:3000/rules](http://localhost:3000/rules)
-- **Dashboard**: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
 
----
+In development the API seeds a demo organisation (Pune Plant 1, three lines, products) and four demo users, all with password `ParakhMaan@2026` (also shown on the login page):
+`admin@parakhmaan.local`, `manager@parakhmaan.local`, `operator@parakhmaan.local`, `auditor@parakhmaan.local`.
 
-### Option 2: Docker Compose (Full Stack with Local LLM)
+### Option 2: Full stack with Docker Compose
 
 ```bash
-# Start Backend, Frontend, and Ollama Local LLM container
-docker-compose up -d --build
-
-# Pull the Qwen2.5 7B model inside the Ollama container
-docker exec -it lm-ollama ollama pull qwen2.5:7b
+cp .env.example .env          # set SECRET_KEY and passwords for anything beyond a local demo
+docker compose up -d --build  # postgres, redis, objectstore (RustFS), api, worker, frontend
 ```
 
-Access points:
-- Frontend: [http://localhost:3000](http://localhost:3000)
-- Backend API: [http://localhost:8080](http://localhost:8080)
-- Ollama LLM Service: [http://localhost:11434](http://localhost:11434)
+- App: http://localhost:3000 · API docs: http://localhost:8080/docs · Object storage console: http://localhost:9001
+- Edge node: register a device in **Admin → Edge Devices**, then
+  `EDGE_DEVICE_KEY=pmk_... docker compose --profile edge up -d edge` (edge API on http://localhost:8090: `POST /infer`, `GET /queue`, `GET /health`).
+- Scale workers: `docker compose up -d --scale worker=3`.
+- Production: `ENVIRONMENT=production`, a random `SECRET_KEY`, `SEED_DEMO_DATA=false`, `BOOTSTRAP_ADMIN_EMAIL/PASSWORD` for the first administrator, `CORS_ORIGINS` and `PUBLIC_API_URL` set to your domain, TLS in front of the API.
 
 ---
 
 ## 🧪 Automated Testing Suite
 
-The repository includes a comprehensive `pytest` test suite with 17 test cases validating all aspects of image processing, parsing, rule engine logic, statutory schedules, and API endpoints.
+The repository includes a `pytest` suite (59 tests) covering image processing, parsing, the rule engine, statutory schedules, defect detection and analytics, and the platform layer (`test_phase_a.py`: authentication, role and organisation isolation, upload validation, signed file links, S3 backend, background jobs, edge ingestion and offline sync, migrations, production configuration checks).
 
 ```bash
 cd backend

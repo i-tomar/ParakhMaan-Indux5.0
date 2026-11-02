@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.api.auth import get_current_user
+from app.api.deps import get_org_inspection, require
 from app.models.all_models import User, Inspection, Declaration, ComplianceResult, ReviewerAction, AuditEvent
 from app.schemas.all_schemas import ReviewActionRequest, ReviewActionResponse, InspectionDetailResponse
 from app.services.rule_engine import rule_engine
@@ -13,11 +13,9 @@ def submit_review_action(
     id: str,
     req: ReviewActionRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("review:write"))
 ):
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     # 1. Record Reviewer Action
     action = ReviewerAction(

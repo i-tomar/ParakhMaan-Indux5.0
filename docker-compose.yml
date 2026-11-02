@@ -1,43 +1,152 @@
-version: '3.8'
+# ParakhMaan full stack:  docker compose up -d --build
+# Edge node (after registering a device in Admin -> Edge Devices):
+#   EDGE_DEVICE_KEY=pmk_... docker compose --profile edge up -d edge
+# Settings come from .env next to this file (copy .env.example).
+
+x-backend-env: &backend-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-change-me}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+  SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+  BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+  BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-parakhmaan}:${POSTGRES_PASSWORD:-parakhmaan}@postgres:5432/${POSTGRES_DB:-parakhmaan}
+  STORAGE_BACKEND: s3
+  STORAGE_DIR: /app/storage
+  REPORTS_DIR: /app/storage/reports
+  S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://objectstore:9000}
+  S3_BUCKET: ${S3_BUCKET:-parakhmaan}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-parakhmaan}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-parakhmaan-s3-secret}
+  REDIS_URL: redis://redis:6379/0
+  DEFECT_DETECTOR_BACKEND: ${DEFECT_DETECTOR_BACKEND:-hybrid}
+  DEFECT_MODEL_PATH: storage/models/best.onnx
+  DEFECT_MODEL_CLASSES: ${DEFECT_MODEL_CLASSES:-scratch,crack,dent,discolouration}
+  DEFECT_SAMPLES_DIR: /app/storage/defect_samples
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  LLM_MODEL: ${LLM_MODEL:-qwen2.5:7b}
 
 services:
-  backend:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-parakhmaan}
+      POSTGRES_USER: ${POSTGRES_USER:-parakhmaan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parakhmaan}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # S3-compatible object storage (RustFS, Apache-2.0). MinIO no longer publishes community images;
+  # any S3 endpoint (AWS S3, SeaweedFS, MinIO) works by changing S3_ENDPOINT_URL and credentials.
+  objectstore:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-parakhmaan}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-parakhmaan-s3-secret}
+    ports:
+      - "9001:9001"  # object storage console
+    volumes:
+      - object_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://localhost:9000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
     build:
       context: ./backend
-      dockerfile: Dockerfile
-    container_name: sih26034_backend
+    environment:
+      <<: *backend-env
+      AUTO_MIGRATE: "true"
     ports:
       - "8080:8000"
-    environment:
-      - SECRET_KEY=sih26034-legal-metrology-secret-2026
-      - DATABASE_URL=sqlite:///storage/legal_metrology.db
-      - STORAGE_DIR=/app/storage
-      - REPORTS_DIR=/app/storage/reports
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - LLM_MODEL=qwen2.5:7b
-      # Defect Inspection mode: hybrid (YOLOv8 ONNX + OpenCV) | opencv | onnx
-      - DEFECT_DETECTOR_BACKEND=hybrid
-      - DEFECT_MODEL_PATH=storage/models/best.onnx
-      - DEFECT_MODEL_CLASSES=scratch,crack,dent,discolouration
-      - DEFECT_SAMPLES_DIR=/app/storage/defect_samples
     volumes:
-      - backend_storage:/app/storage
-      # Bind-mounted so the model is present even when backend_storage already exists
+      - api_cache:/app/storage
       - ./backend/storage/models:/app/storage/models:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      objectstore: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      args:
+        TRAINING: "true"  # adds PyTorch (CPU) + Ultralytics for MODEL_TRAINING jobs
+    command: ["python", "-m", "app.workers.worker"]
+    environment:
+      <<: *backend-env
+      AUTO_MIGRATE: "false"
+    volumes:
+      - worker_cache:/app/storage
+      - ./backend/storage/models:/app/storage/models:ro
+    depends_on:
+      api: { condition: service_healthy }  # api runs the migrations
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  edge:
+    profiles: ["edge"]
+    build:
+      context: ./backend
+    command: ["uvicorn", "app.edge.main:app", "--host", "0.0.0.0", "--port", "8090"]
+    environment:
+      DEFECT_DETECTOR_BACKEND: ${DEFECT_DETECTOR_BACKEND:-hybrid}
+      DEFECT_MODEL_PATH: storage/models/best.onnx
+      DEFECT_MODEL_CLASSES: ${DEFECT_MODEL_CLASSES:-scratch,crack,dent,discolouration}
+      EDGE_CENTRAL_URL: ${EDGE_CENTRAL_URL:-http://api:8000}
+      EDGE_DEVICE_KEY: ${EDGE_DEVICE_KEY:-}
+      EDGE_QUEUE_DB: /app/storage/edge_outbox.db
+      STORAGE_DIR: /app/storage
+    ports:
+      - "8090:8090"
+    volumes:
+      - edge_data:/app/storage
+      - ./backend/storage/models:/app/storage/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8090/health', timeout=4)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: sih26034_frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080/api/v1}
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
     depends_on:
-      - backend
+      - api
     restart: unless-stopped
 
 volumes:
-  backend_storage:
+  postgres_data:
+  redis_data:
+  object_data:
+  api_cache:
+  worker_cache:
+  edge_data:

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, B
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.api.auth import get_current_user
+from app.api.deps import get_current_user, get_org_inspection, require
 from app.models.all_models import (
     User, Inspection, Image as ImageModel, Declaration, ComplianceResult, AuditEvent
 )
@@ -33,7 +33,7 @@ LEGAL_MODE = "LEGAL_METROLOGY"
 def create_inspection(
     req: InspectionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
     count = db.query(Inspection).filter(Inspection.inspection_mode == LEGAL_MODE).count() + 1
     while db.query(Inspection).filter(Inspection.inspection_number == f"INSP-2026-{count:04d}").first():
@@ -49,6 +49,7 @@ def create_inspection(
         location=req.location,
         notes=req.notes,
         created_by_id=current_user.id,
+        organization_id=current_user.organization_id,
         status="DRAFT",
         overall_outcome="PENDING"
     )
@@ -75,9 +76,12 @@ def list_inspections(
     outcome: Optional[str] = None,
     search: Optional[str] = None,
     mode: str = LEGAL_MODE,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require("inspection:read"))
 ):
-    query = db.query(Inspection).filter(Inspection.inspection_mode == mode)
+    query = db.query(Inspection).filter(
+        Inspection.inspection_mode == mode, Inspection.organization_id == current_user.organization_id
+    )
     if status:
         query = query.filter(Inspection.status == status)
     if outcome:
@@ -116,11 +120,9 @@ def list_inspections(
     return results
 
 @router.get("/{id}", response_model=InspectionDetailResponse)
-def get_inspection_detail(id: str, db: Session = Depends(get_db)):
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
-    return insp
+def get_inspection_detail(id: str, db: Session = Depends(get_db),
+                          current_user: User = Depends(require("inspection:read"))):
+    return get_org_inspection(db, id, current_user)
 
 @router.post("/{id}/images", response_model=ImageResponse)
 async def upload_inspection_image(
@@ -128,20 +130,19 @@ async def upload_inspection_image(
     file: UploadFile = File(...),
     surface_type: str = Form("FRONT"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
-    # Save image to storage
+    # Save image to storage (key), then analyse the locally readable copy
     file_path = await storage_service.save_upload(file, id)
+    local_path = storage_service.local_path(file_path)
 
     # Perform OpenCV image quality analysis
-    quality_meta = image_quality_analyzer.analyze(file_path)
+    quality_meta = image_quality_analyzer.analyze(local_path)
 
     # Perform OCR
-    ocr_spans = ocr_service.extract_text(file_path, image_id=None, surface_type=surface_type)
+    ocr_spans = ocr_service.extract_text(local_path, image_id=None, surface_type=surface_type)
 
     image = ImageModel(
         inspection_id=id,
@@ -180,17 +181,15 @@ def capture_camera_image(
     id: str,
     payload: dict = Body(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
     """
     Accepts Base64 image captured directly from PC webcam or mobile camera.
     """
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     image_data_b64 = payload.get("image_base64", "")
-    surface_type = payload.get("surface_type", "FRONT").upper()
+    surface_type = str(payload.get("surface_type", "FRONT")).upper()[:50]
 
     if "," in image_data_b64:
         image_data_b64 = image_data_b64.split(",")[1]
@@ -201,12 +200,13 @@ def capture_camera_image(
         raise HTTPException(status_code=400, detail="Invalid base64 image data")
 
     file_path = storage_service.save_bytes(image_bytes, id, f"cam_{surface_type.lower()}.jpg")
+    local_path = storage_service.local_path(file_path)
 
     # Quality check
-    quality_meta = image_quality_analyzer.analyze(file_path)
+    quality_meta = image_quality_analyzer.analyze(local_path)
 
     # OCR extraction
-    ocr_spans = ocr_service.extract_text(file_path, image_id=None, surface_type=surface_type)
+    ocr_spans = ocr_service.extract_text(local_path, image_id=None, surface_type=surface_type)
 
     image = ImageModel(
         inspection_id=id,
@@ -245,18 +245,14 @@ def delete_inspection_image(
     id: str,
     image_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
+    get_org_inspection(db, id, current_user)
     img = db.query(ImageModel).filter(ImageModel.id == image_id, ImageModel.inspection_id == id).first()
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    
-    if os.path.exists(img.file_path):
-        try:
-            os.remove(img.file_path)
-        except Exception:
-            pass
 
+    storage_service.delete(img.file_path)
     db.delete(img)
     db.commit()
     return {"message": "Image deleted successfully"}
@@ -265,7 +261,7 @@ def delete_inspection_image(
 def process_inspection_pipeline(
     id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
     """
     Executes the deterministic AI compliance pipeline:
@@ -275,9 +271,7 @@ def process_inspection_pipeline(
     4. Evaluates Deterministic Rule Engine
     5. Calculates overall outcome (PASS / REVIEW / POSSIBLE_NON_COMPLIANCE)
     """
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     if insp.inspection_mode == "DEFECT":
         raise HTTPException(status_code=400, detail="Defect inspections are processed via /defects endpoints")
@@ -297,8 +291,9 @@ def process_inspection_pipeline(
         spans = img.ocr_raw_data or []
         # If spans are missing or only contain placeholder text, run real OCR extraction
         has_real_text = any(s.get("text") and s.get("text") != "[Detected Text Region]" for s in spans)
-        if not has_real_text and os.path.exists(img.file_path):
-            spans = ocr_service.extract_text(img.file_path, image_id=img.id, surface_type=img.surface_type)
+        if not has_real_text and storage_service.exists(img.file_path):
+            spans = ocr_service.extract_text(storage_service.local_path(img.file_path), image_id=img.id,
+                                             surface_type=img.surface_type)
             img.ocr_raw_data = spans
             db.commit()
 
@@ -380,7 +375,7 @@ def process_inspection_pipeline(
 
     # Generate initial PDF report
     try:
-        insp_detail = get_inspection_detail(id, db)
+        insp_detail = get_org_inspection(db, id, current_user)
         report_path = pdf_report_service.generate_inspection_report(insp_detail.__dict__)
         insp.report_path = report_path
         db.commit()
@@ -398,18 +393,16 @@ def process_inspection_pipeline(
     db.add(audit)
     db.commit()
 
-    return get_inspection_detail(id, db)
+    return get_org_inspection(db, id, current_user)
 
 @router.post("/{id}/finalize", response_model=InspectionDetailResponse)
 def finalize_inspection(
     id: str,
     req: InspectionFinalizeRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:finalize"))
 ):
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     insp.status = "FINALIZED"
     if req.override_status:
@@ -452,16 +445,18 @@ def finalize_inspection(
     return insp
 
 @router.get("/{id}/heatmap/{image_id}")
-def get_image_heatmap(id: str, image_id: str, db: Session = Depends(get_db)):
+def get_image_heatmap(id: str, image_id: str, db: Session = Depends(get_db),
+                      current_user: User = Depends(require("inspection:read"))):
     """
     Generates and returns an OpenCV thermal/attention heatmap for a package image.
     """
+    get_org_inspection(db, id, current_user)
     img = db.query(ImageModel).filter(ImageModel.id == image_id, ImageModel.inspection_id == id).first()
-    if not img or not os.path.exists(img.file_path):
+    if not img or not storage_service.exists(img.file_path):
         raise HTTPException(status_code=404, detail="Image not found")
 
     heatmap_b64 = heatmap_service.generate_heatmap_base64(
-        image_path=img.file_path,
+        image_path=storage_service.local_path(img.file_path),
         ocr_spans=img.ocr_raw_data or []
     )
     if not heatmap_b64:
@@ -477,18 +472,17 @@ def get_image_heatmap(id: str, image_id: str, db: Session = Depends(get_db)):
 def reprocess_inspection(
     id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:write"))
 ):
     """
     Forces live re-extraction with native WinOCR across all images and re-runs Rule Engine.
     """
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     for img in insp.images:
-        if os.path.exists(img.file_path):
-            spans = ocr_service.extract_text(img.file_path, image_id=img.id, surface_type=img.surface_type)
+        if storage_service.exists(img.file_path):
+            spans = ocr_service.extract_text(storage_service.local_path(img.file_path), image_id=img.id,
+                                             surface_type=img.surface_type)
             img.ocr_raw_data = spans
     db.commit()
 
@@ -498,14 +492,12 @@ def reprocess_inspection(
 async def get_ai_deep_analysis(
     id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require("inspection:read"))
 ):
     """
     Generates a deep LLM statutory reasoning & risk assessment report for this inspection.
     """
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+    insp = get_org_inspection(db, id, current_user)
 
     decls = [d.__dict__ for d in insp.declarations]
     compliance_results = [r.__dict__ for r in insp.compliance_results]
@@ -524,14 +516,14 @@ async def get_ai_deep_analysis(
     return analysis
 
 @router.get("/llm/status")
-async def get_llm_status():
+async def get_llm_status(_: User = Depends(get_current_user)):
     """
     Checks the local Ollama LLM status and active model.
     """
     return await llm_service.check_ollama_status()
 
 @router.post("/llm/config")
-def update_llm_config(payload: dict = Body(...)):
+def update_llm_config(payload: dict = Body(...), _: User = Depends(require("system:configure"))):
     """
     Updates LLM base URL and active model.
     """

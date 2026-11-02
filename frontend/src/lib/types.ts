@@ -22,6 +22,10 @@ export interface PackageImage {
   inspection_id?: string;
   surface_type: string;
   file_path: string;
+  /** Short-lived signed link to the stored image (use with getStorageUrl / imageSrc). */
+  file_url?: string | null;
+  review_status?: 'UNREVIEWED' | 'VERIFIED' | string;
+  dataset_split?: 'train' | 'val' | 'test' | null;
   original_filename: string;
   quality_score: number;
   quality_metadata?: {
@@ -162,6 +166,7 @@ export interface DefectDetection {
   bbox: number[];
   area_ratio?: number;
   detector: string;
+  model_version?: string | null;
   metrics?: Record<string, any>;
   frame_index?: number | null;
   frame_timestamp_ms?: number | null;
@@ -221,6 +226,12 @@ export interface DefectInspection {
   id: string;
   inspection_number: string;
   inspection_mode?: string;
+  product_id?: string | null;
+  station_id?: string | null;
+  station_name?: string | null;
+  shift?: string | null;
+  batch_code?: string | null;
+  source?: string | null;
   product_name?: string;
   brand_name?: string;
   category: string;
@@ -292,6 +303,218 @@ export interface DefectLogItem extends DefectDetection {
   inspection_number: string;
   product_name?: string;
   batch?: string;
+  station?: string | null;
+  shift?: string | null;
+}
+
+// --- Auth, organisation structure, jobs ---
+export interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: 'OPERATOR' | 'QUALITY_MANAGER' | 'ADMIN' | 'AUDITOR' | string;
+  permissions: string[];
+  badge_number?: string | null;
+  organization_id?: string | null;
+  organization_name?: string | null;
+}
+
+export interface StationNode {
+  id: string;
+  line_id: string;
+  name: string;
+  camera_info?: string | null;
+  is_active: boolean;
+}
+
+export interface LineNode {
+  id: string;
+  plant_id: string;
+  name: string;
+  stations: StationNode[];
+}
+
+export interface PlantNode {
+  id: string;
+  name: string;
+  location?: string | null;
+  lines: LineNode[];
+}
+
+export interface Product {
+  id: string;
+  sku: string;
+  name: string;
+  family?: string | null;
+  material?: string | null;
+  is_active: boolean;
+}
+
+export interface ManagedUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface EdgeDevice {
+  id: string;
+  name: string;
+  station_id?: string | null;
+  key_prefix: string;
+  is_active: boolean;
+  last_seen_at?: string | null;
+  created_at: string;
+}
+
+// --- Learning loop (Phase B) ---
+export interface ReviewReason {
+  code: 'UNCERTAIN' | 'DISAGREEMENT' | 'UNKNOWN_CLASS' | 'QUALITY' | 'DRIFT' | 'AUDIT' | 'MANUAL' | string;
+  detail: string;
+}
+
+export interface ReviewTask {
+  id: string;
+  status: 'OPEN' | 'DONE' | 'SKIPPED' | string;
+  priority: number;
+  reasons: ReviewReason[];
+  source: string;
+  created_at: string;
+  completed_at?: string | null;
+  image_id: string;
+  image_url?: string | null;
+  image_review_status: string;
+  inspection_id: string;
+  inspection_number: string;
+  product_name?: string | null;
+  station?: string | null;
+  batch_code?: string | null;
+  detection_count: number;
+  pending_count: number;
+}
+
+export interface ReviewTaskDetail extends ReviewTask {
+  detections: DefectDetection[];
+  image_size?: [number, number] | null;
+  defect_types: string[];
+}
+
+export interface ReviewStats {
+  open: number;
+  by_reason: Record<string, number>;
+  done_last_24h: number;
+  verified_images: number;
+  verified_by_split: Record<string, number>;
+  new_verified_since_last_dataset: number;
+  auto_train_threshold: number;
+  classes: string[];
+}
+
+export interface GateCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+  value?: number | null;
+  threshold?: number | null;
+}
+
+export interface GateReport {
+  passed: boolean;
+  checks: GateCheck[];
+  test_images: number;
+  dataset_version?: number;
+  champion_name?: string | null;
+  candidate?: { map50: number; precision: number; recall: number; avg_latency_ms: number; per_class: Record<string, any> };
+  champion?: { map50: number; precision: number; recall: number; avg_latency_ms: number; per_class: Record<string, any> } | null;
+  evaluated_at?: string;
+}
+
+export interface ShadowStats {
+  images: number;
+  agreement: number | null;
+  avg_latency_ms?: number | null;
+  verified_images: number;
+  shadow: { precision: number; recall: number; f1: number; tp: number; fp: number; fn: number } | null;
+  champion: { precision: number; recall: number; f1: number; tp: number; fp: number; fn: number } | null;
+}
+
+export interface ModelVersionInfo {
+  id: string;
+  version: number;
+  name: string;
+  status: 'TRAINING' | 'CANDIDATE' | 'GATE_FAILED' | 'GATE_PASSED' | 'SHADOW' | 'ACTIVE' | 'RETIRED' | 'FAILED' | string;
+  source: string;
+  parent_id?: string | null;
+  dataset_version?: number | null;
+  classes: string[];
+  input_size?: number | null;
+  sha256?: string | null;
+  train_metrics?: Record<string, any> | null;
+  gate_report?: GateReport | null;
+  model_card?: Record<string, any> | null;
+  job_id?: string | null;
+  created_at: string;
+  approved_at?: string | null;
+  activated_at?: string | null;
+  notes?: string | null;
+  shadow_stats?: ShadowStats;
+}
+
+export interface DatasetVersionInfo {
+  id: string;
+  version: number;
+  status: string;
+  classes: string[];
+  image_count: number;
+  label_count: number;
+  class_counts: Record<string, number>;
+  split_counts: Record<string, number>;
+  manifest_sha256?: string | null;
+  created_at: string;
+  notes?: string | null;
+}
+
+export interface DriftStation {
+  station_id: string | null;
+  station: string;
+  baseline_images: number;
+  recent_images: number;
+  status: 'OK' | 'WATCH' | 'ALERT' | 'INSUFFICIENT_DATA' | string;
+  psi: number | null;
+  features: Record<string, { psi: number; status: string }>;
+}
+
+export interface LearningOverview {
+  active_model: ModelVersionInfo | null;
+  shadow_model: (ModelVersionInfo & { shadow_stats: ShadowStats }) | null;
+  latest_dataset: DatasetVersionInfo | null;
+  new_verified_since_last_dataset: number;
+  running_jobs: Job[];
+  policy: Record<string, any>;
+}
+
+export interface ModelEventInfo {
+  id: string;
+  event_type: string;
+  description: string;
+  created_at: string;
+  model?: string | null;
+}
+
+export interface Job {
+  id: string;
+  job_type: string;
+  status: 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | string;
+  progress: number;
+  message?: string | null;
+  result?: Record<string, any> | null;
+  error?: string | null;
+  inspection_id?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 export interface DefectDetectorStatus {

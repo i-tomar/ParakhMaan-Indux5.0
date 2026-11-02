@@ -1,14 +1,15 @@
 import os
 import json
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 
+from app.api.deps import get_current_user
 from app.services.mpe_calculator import mpe_calculator
 from app.services.schedule_checker import schedule_checker
 from app.services.pdp_calculator import pdp_calculator
 
-router = APIRouter(prefix="/tools", tags=["Inspector Tools & Schedules"])
+router = APIRouter(prefix="/tools", tags=["Inspector Tools & Schedules"], dependencies=[Depends(get_current_user)])
 
 class MPECalculateRequest(BaseModel):
     quantity: float

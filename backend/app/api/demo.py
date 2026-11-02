@@ -1,8 +1,9 @@
 import os
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.api.deps import require
 from app.core.database import get_db
 from app.core.config import settings
 from app.models.all_models import (
@@ -43,24 +44,17 @@ def create_synthetic_image(filename: str, text_lines: list[str], is_blurry: bool
     return file_path
 
 @router.post("/seed")
-def seed_demo_data(db: Session = Depends(get_db)):
+def seed_demo_endpoint(db: Session = Depends(get_db), current_user: User = Depends(require("system:configure"))):
+    if settings.is_production:
+        raise HTTPException(status_code=403, detail="Demo seeding is disabled in production")
+    return seed_demo_data(db, current_user)
+
+def seed_demo_data(db: Session, inspector: User):
     # Check if demo data already seeded
     existing = db.query(Inspection).filter(Inspection.inspection_number.like("INSP-DEMO-%")).first()
     if existing:
         return {"message": "Demo data already initialized", "count": db.query(Inspection).count()}
-
-    inspector = db.query(User).filter(User.email == "inspector@gov.in").first()
-    if not inspector:
-        inspector = User(
-            email="inspector@gov.in",
-            full_name="Senior Legal Metrology Inspector",
-            hashed_password="demo",
-            role="INSPECTOR",
-            badge_number="LM-IND-01"
-        )
-        db.add(inspector)
-        db.commit()
-        db.refresh(inspector)
+    org_id = inspector.organization_id
 
     # --- Scenario 1: Fully Compliant Packaged Snack ---
     img1_path = create_synthetic_image("demo_compliant_front.jpg", [
@@ -84,6 +78,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
         status="FINALIZED",
         overall_outcome="PASS",
         created_by_id=inspector.id,
+        organization_id=org_id,
         location="Supermarket Shelf 4A, New Delhi",
         notes="Standard retail packaging audit for FMCG snack food.",
         final_remarks="All mandatory declarations compliant with Rule 6 and Schedule II."
@@ -163,6 +158,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
         status="FINALIZED",
         overall_outcome="POSSIBLE_NON_COMPLIANCE",
         created_by_id=inspector.id,
+        organization_id=org_id,
         location="Grocery Store, Sector 18, Noida",
         notes="Non-compliant sample missing statutory MRP and consumer care details."
     )
@@ -201,6 +197,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
         status="REVIEW",
         overall_outcome="REVIEW",
         created_by_id=inspector.id,
+        organization_id=org_id,
         location="Warehouse Bay 2, Mumbai",
         notes="Image quality degraded by camera blur during warehouse inspection."
     )
@@ -236,6 +233,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
         status="REVIEW",
         overall_outcome="REVIEW",
         created_by_id=inspector.id,
+        organization_id=org_id,
         location="Central Distribution Depot, Haryana",
         notes="Cross-surface contradiction detected between Front (5 kg) and Back label (4.5 kg)."
     )

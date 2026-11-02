@@ -5,15 +5,14 @@ from datetime import datetime, timedelta, timezone
 import cv2
 import numpy as np
 import pytest
-from fastapi.testclient import TestClient
 
-from app.main import app
 from app.services.defect_analytics_service import build_defect_analytics
 from app.services.defect_detection_service import (
     DefectDetector, compute_outcome, synthesize_surface_sample
 )
+from tests.helpers import client_for
 
-client = TestClient(app)
+client = client_for("ADMIN")
 detector = DefectDetector(model_path="", backend="opencv")
 
 MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "storage", "models", "best.onnx")
@@ -250,8 +249,11 @@ def test_defect_inspection_api_flow(tmp_path):
             files={"file": ("clip.avi", f.read(), "video/x-msvideo")},
             data={"sample_fps": "5", "max_frames": "4"},
         )
-    assert vid.status_code == 200, vid.text
-    summary = vid.json()
+    assert vid.status_code == 202, vid.text
+    job = client.get(f"/api/v1/jobs/{vid.json()['id']}").json()
+    assert job["status"] == "SUCCEEDED", job
+    assert job["progress"] == 1.0
+    summary = job["result"]
     assert summary["frames_sampled"] == 4
     assert summary["frames_with_defects"] == 4
     assert summary["detections_by_type"].get("CRACK") == 4

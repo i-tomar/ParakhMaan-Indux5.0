@@ -1,15 +1,19 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from app.api.deps import require
 from app.core.database import get_db
-from app.models.all_models import Inspection, ComplianceResult
+from app.models.all_models import Inspection, ComplianceResult, User
 from app.schemas.all_schemas import DashboardSummaryResponse, InspectionResponse
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 @router.get("/summary", response_model=DashboardSummaryResponse)
-def get_dashboard_summary(db: Session = Depends(get_db)):
-    legal = db.query(Inspection).filter(Inspection.inspection_mode == "LEGAL_METROLOGY")
+def get_dashboard_summary(db: Session = Depends(get_db), current_user: User = Depends(require("inspection:read"))):
+    org_id = current_user.organization_id
+    legal = db.query(Inspection).filter(
+        Inspection.inspection_mode == "LEGAL_METROLOGY", Inspection.organization_id == org_id
+    )
     total = legal.count()
     compliant = legal.filter(Inspection.overall_outcome == "PASS").count()
     needs_review = legal.filter(Inspection.overall_outcome == "REVIEW").count()
@@ -41,7 +45,7 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     # Category distribution
     cat_counts = (
         db.query(Inspection.category, func.count(Inspection.id))
-        .filter(Inspection.inspection_mode == "LEGAL_METROLOGY")
+        .filter(Inspection.inspection_mode == "LEGAL_METROLOGY", Inspection.organization_id == org_id)
         .group_by(Inspection.category)
         .all()
     )
@@ -50,7 +54,8 @@ def get_dashboard_summary(db: Session = Depends(get_db)):
     # Common violations/issues from compliance results
     violations = (
         db.query(ComplianceResult.field, ComplianceResult.rule_id, func.count(ComplianceResult.id))
-        .filter(ComplianceResult.outcome.in_(["POSSIBLE_NON_COMPLIANCE", "REVIEW"]))
+        .join(Inspection, Inspection.id == ComplianceResult.inspection_id)
+        .filter(ComplianceResult.outcome.in_(["POSSIBLE_NON_COMPLIANCE", "REVIEW"]), Inspection.organization_id == org_id)
         .group_by(ComplianceResult.field, ComplianceResult.rule_id)
         .order_by(func.count(ComplianceResult.id).desc())
         .limit(5)

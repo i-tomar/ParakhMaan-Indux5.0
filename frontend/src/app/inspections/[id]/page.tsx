@@ -2,7 +2,9 @@
 
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, openAuthenticatedFile } from '@/lib/api';
+import { can } from '@/lib/auth';
+import { useAuthUser } from '@/lib/useAuth';
 import { Inspection, ComplianceResult } from '@/lib/types';
 import EvidenceViewer from '@/components/EvidenceViewer';
 import ComplianceMatrix from '@/components/ComplianceMatrix';
@@ -19,6 +21,7 @@ import {
 export default function InspectionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const id = resolvedParams.id;
+  const user = useAuthUser();
 
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,18 +177,17 @@ export default function InspectionDetailPage({ params }: { params: Promise<{ id:
           </button>
 
           {/* Download Official PDF Report */}
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openAuthenticatedFile(reportUrl).catch((err) => console.error(err))}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs"
           >
             <Download className="w-4 h-4 text-[#0075de]" />
             <span>Download Official PDF Report</span>
-          </a>
+          </button>
 
           {/* Finalize Button */}
-          {inspection.status !== 'FINALIZED' && (
+          {inspection.status !== 'FINALIZED' && can(user, 'inspection:finalize') && (
             <button
               onClick={handleFinalize}
               disabled={finalizing}

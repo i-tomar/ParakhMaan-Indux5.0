@@ -86,6 +86,23 @@ def _oriented_line_response(resp: np.ndarray, length: int) -> np.ndarray:
     return cv2.resize(out, (w, h), interpolation=cv2.INTER_LINEAR)
 
 
+def _set_cv_log_level(level: Optional[int]) -> Optional[int]:
+    """Sets OpenCV's log level and returns the previous one (API location differs across versions)."""
+    if level is None:
+        return None
+    logging_api = getattr(getattr(cv2, "utils", None), "logging", None)
+    try:
+        if logging_api is not None and hasattr(logging_api, "setLogLevel"):
+            previous = logging_api.getLogLevel()
+            logging_api.setLogLevel(level)
+            return previous
+        if hasattr(cv2, "setLogLevel"):
+            return cv2.setLogLevel(level)
+    except Exception:
+        pass
+    return None
+
+
 def decode_base64_image(data: str) -> Optional[np.ndarray]:
     if "," in data:
         data = data.split(",", 1)[1]
@@ -120,14 +137,18 @@ class DefectDetector:
     WORK_MAX_SIDE = 1024
     MAX_DETECTIONS = 40
 
-    def __init__(self, model_path: Optional[str] = None, model_classes: Optional[str] = None, backend: Optional[str] = None):
+    def __init__(self, model_path: Optional[str] = None, model_classes: Optional[str] = None, backend: Optional[str] = None,
+                 conf_threshold: Optional[float] = None):
         self.backend = (backend or settings.DEFECT_DETECTOR_BACKEND or "hybrid").lower()
+        # Per-instance so evaluation can score the full precision/recall curve without changing live inference.
+        self.conf_threshold = settings.DEFECT_MODEL_CONF_THRESHOLD if conf_threshold is None else conf_threshold
         self._model_path = resolve_backend_path(settings.DEFECT_MODEL_PATH if model_path is None else model_path)
         self._class_spec = settings.DEFECT_MODEL_CLASSES if model_classes is None else model_classes
         self._net = None
         self._input_size = 0
         self._classes: List[str] = []
         self._model_error: Optional[str] = None
+        self.model_version: Optional[str] = None
         # cv2.dnn.Net is not thread-safe and FastAPI serves sync endpoints from a thread pool.
         self._net_lock = threading.Lock()
         self._load_model()
@@ -161,7 +182,7 @@ class DefectDetector:
         # Exports usually have a fixed input size; probe for it instead of relying on configuration.
         sizes = [settings.DEFECT_MODEL_INPUT_SIZE] if settings.DEFECT_MODEL_INPUT_SIZE > 0 else []
         sizes += [s for s in (640, 320, 416, 512, 1280) if s not in sizes]
-        previous_log_level = cv2.setLogLevel(0)  # wrong sizes make OpenCV log shape errors
+        previous_log_level = _set_cv_log_level(0)  # wrong sizes make OpenCV log shape errors
         try:
             for size in sizes:
                 try:
@@ -176,9 +197,14 @@ class DefectDetector:
                         self._model_error = f"Model has {outputs} class outputs but {len(self._classes)} class names were given"
                     break
         finally:
-            cv2.setLogLevel(previous_log_level)
+            _set_cv_log_level(previous_log_level)
         if self._net is None:
             self._model_error = f"ONNX model did not accept any input size in {sizes}"
+        else:
+            import hashlib
+            with open(path, "rb") as f:
+                digest = hashlib.sha256(f.read()).hexdigest()[:12]
+            self.model_version = f"{os.path.basename(path)}@{digest}"
 
     def status(self) -> Dict[str, Any]:
         return {
@@ -186,6 +212,7 @@ class DefectDetector:
             "opencv_version": cv2.__version__,
             "model_loaded": self._net is not None,
             "model_path": self._model_path or None,
+            "model_version": self.model_version,
             "model_input_size": self._input_size or None,
             "model_classes": self._classes,
             "model_error": self._model_error,
@@ -716,7 +743,7 @@ class DefectDetector:
             scores = scores[:, 1:] * scores[:, :1]  # YOLOv5 layout with objectness
         class_ids = scores.argmax(axis=1)
         confs = scores.max(axis=1)
-        keep = confs >= settings.DEFECT_MODEL_CONF_THRESHOLD
+        keep = confs >= self.conf_threshold
         boxes, class_ids, confs = boxes[keep], class_ids[keep], confs[keep]
         if len(confs) == 0:
             return []
@@ -724,7 +751,7 @@ class DefectDetector:
         xywh = []
         for cx, cy, bw, bh in boxes:
             xywh.append([float((cx - bw / 2) / r), float((cy - bh / 2) / r), float(bw / r), float(bh / r)])
-        idxs = cv2.dnn.NMSBoxes(xywh, confs.astype(float).tolist(), settings.DEFECT_MODEL_CONF_THRESHOLD, 0.45)
+        idxs = cv2.dnn.NMSBoxes(xywh, confs.astype(float).tolist(), self.conf_threshold, 0.45)
 
         dets = []
         for i in np.array(idxs).flatten():

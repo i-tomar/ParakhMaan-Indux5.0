@@ -2,7 +2,10 @@
 
 import React, { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { defectApi, getStorageUrl } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { defectApi, imageSrc, openAuthenticatedFile, reviewApi } from '@/lib/api';
+import { can } from '@/lib/auth';
+import { useAuthUser } from '@/lib/useAuth';
 import { DefectDetection, DefectInspection } from '@/lib/types';
 import { defectColor, defectLabel, outcomeStyle } from '@/lib/defects';
 import { formatDateTime } from '@/lib/formatters';
@@ -16,6 +19,8 @@ import {
 
 export default function DefectResultPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const user = useAuthUser();
+  const router = useRouter();
 
   const [inspection, setInspection] = useState<DefectInspection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -147,28 +152,33 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
           <span>Back to Defect Inspection</span>
         </Link>
         <div className="flex items-center flex-wrap gap-2">
-          <label className="cursor-pointer flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#0075de] border border-[#0075de]/30 hover:bg-[#f0f7ff] transition-all shadow-xs">
-            {uploading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-            <span>{uploading ? 'Analysing…' : 'Analyse More Images'}</span>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              disabled={uploading}
-              onChange={(e) => handleAddImages(e.target.files)}
-            />
-          </label>
-          <a
-            href={defectApi.getReportUrl(inspection.id)}
-            target="_blank"
-            rel="noopener noreferrer"
+          {can(user, 'inspection:write') && inspection.status !== 'FINALIZED' && (
+            <label className="cursor-pointer flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#0075de] border border-[#0075de]/30 hover:bg-[#f0f7ff] transition-all shadow-xs">
+              {uploading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              <span>{uploading ? 'Analysing…' : 'Analyse More Images'}</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                disabled={uploading}
+                onChange={(e) => handleAddImages(e.target.files)}
+              />
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={() =>
+              openAuthenticatedFile(defectApi.getReportUrl(inspection.id)).catch((err) =>
+                setError(err instanceof Error ? err.message : 'Report download failed')
+              )
+            }
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs"
           >
             <Download className="w-4 h-4 text-[#0075de]" />
             <span>Download Defect Report (PDF)</span>
-          </a>
-          {inspection.status !== 'FINALIZED' && (
+          </button>
+          {inspection.status !== 'FINALIZED' && can(user, 'inspection:finalize') && (
             <button
               onClick={handleFinalize}
               disabled={finalizing}
@@ -201,8 +211,10 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
             </div>
             <p className="text-xs opacity-90 mt-0.5">
               {inspection.product_name || 'Unnamed Product'}
-              {inspection.brand_name ? ` • Batch ${inspection.brand_name}` : ''} • {inspection.category.replace(/_/g, ' ')}
-              {inspection.location ? ` • ${inspection.location}` : ''}
+              {(inspection.batch_code || inspection.brand_name) ? ` • Batch ${inspection.batch_code || inspection.brand_name}` : ''} • {inspection.category.replace(/_/g, ' ')}
+              {(inspection.station_name || inspection.location) ? ` • ${inspection.station_name || inspection.location}` : ''}
+              {inspection.shift ? ` • Shift ${inspection.shift}` : ''}
+              {inspection.source === 'EDGE' ? ' • Edge device' : ''}
             </p>
           </div>
         </div>
@@ -227,7 +239,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
         <div className="lg:col-span-7 space-y-3">
           {activeImage ? (
             <DefectOverlay
-              imageUrl={getStorageUrl(activeImage.file_path)}
+              imageUrl={imageSrc(activeImage)}
               detections={activeDetections}
               selectedId={selectedId}
               onSelect={handleSelect}
@@ -254,7 +266,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={getStorageUrl(img.file_path)} alt={img.original_filename} className="w-24 h-16 object-cover" />
+                    <img src={imageSrc(img)} alt={img.original_filename} className="w-24 h-16 object-cover" />
                     <span className="absolute top-1 left-1 p-0.5 rounded bg-black/60 text-white">
                       {isVideo ? <Film className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                     </span>
@@ -274,6 +286,56 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
 
         {/* Right: scan metrics, summary, root causes */}
         <div className="lg:col-span-5 space-y-4">
+          {activeImage && (
+            <div className="bg-white rounded-xl border border-[#e6e6e6] p-4 elevation-0 text-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-xs text-[#000000] uppercase tracking-wider">Training data</h3>
+                {activeImage.review_status === 'VERIFIED' ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-[#166534]">
+                    VERIFIED · {activeImage.dataset_split}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-100 text-gray-600">UNREVIEWED</span>
+                )}
+              </div>
+              <p className="text-[11px] text-[#615d59]">
+                Verified images (every defect confirmed, corrected or drawn) become labels for the next model.
+              </p>
+              {can(user, 'review:write') && activeImage.review_status !== 'VERIFIED' && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await reviewApi.complete(activeImage.id, { accept_pending: true });
+                        await load(true);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Verification failed');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-full font-bold bg-[#0075de] text-white hover:bg-[#005bab]"
+                  >
+                    Verify for training
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        await reviewApi.request(activeImage.id);
+                        setError(null);
+                        router.push('/review');
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Could not create review task');
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-full font-semibold bg-white border border-[#e6e6e6]"
+                  >
+                    Send to review queue
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <div className="bg-white rounded-xl border border-[#e6e6e6] p-4 elevation-0">
             <h3 className="font-bold text-xs text-[#000000] uppercase tracking-wider mb-3 pb-2 border-b border-[#e6e6e6] flex items-center gap-1.5">
               <Gauge className="w-4 h-4 text-[#0075de]" />
@@ -363,7 +425,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
           {referenceImage && (
             <div className="bg-white rounded-xl border border-[#e6e6e6] p-4 elevation-0 flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={getStorageUrl(referenceImage.file_path)} alt="Golden reference" className="w-16 h-16 object-cover rounded-md border border-[#e6e6e6]" />
+              <img src={imageSrc(referenceImage)} alt="Golden reference" className="w-16 h-16 object-cover rounded-md border border-[#e6e6e6]" />
               <div>
                 <p className="text-xs font-bold text-[#000000] flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1aae39]" />
@@ -381,7 +443,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
         selectedId={selectedId}
         onSelect={handleSelect}
         onFeedback={handleFeedback}
-        readOnly={inspection.status === 'FINALIZED'}
+        readOnly={inspection.status === 'FINALIZED' || !can(user, 'review:write')}
         title="Defect Log & Inspector Feedback"
       />
       <p className="text-[11px] text-[#615d59] -mt-4">

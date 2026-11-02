@@ -1,4 +1,9 @@
 from app.models.all_models import (
+    Organization,
+    Plant,
+    ProductionLine,
+    Station,
+    Product,
     User,
     Inspection,
     Image,
@@ -8,9 +13,21 @@ from app.models.all_models import (
     ReviewerAction,
     AuditEvent,
     DefectDetection,
+    EdgeDevice,
+    Job,
+    ReviewTask,
+    DatasetVersion,
+    ModelVersion,
+    ShadowPrediction,
+    ModelEvent,
 )
 
 __all__ = [
+    "Organization",
+    "Plant",
+    "ProductionLine",
+    "Station",
+    "Product",
     "User",
     "Inspection",
     "Image",
@@ -20,4 +37,11 @@ __all__ = [
     "ReviewerAction",
     "AuditEvent",
     "DefectDetection",
+    "EdgeDevice",
+    "Job",
+    "ReviewTask",
+    "DatasetVersion",
+    "ModelVersion",
+    "ShadowPrediction",
+    "ModelEvent",
 ]

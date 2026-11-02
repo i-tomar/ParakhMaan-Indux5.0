@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Navbar from '@/components/Navbar';
+import AuthGate from '@/components/AuthGate';
 
 export const metadata: Metadata = {
-  title: 'Legal Metrology AI Compliance Platform | SIH26034',
-  description: 'AI-Powered Legal Metrology Compliance & Inspection Platform for Packaged Commodities Rules 2011',
+  title: 'ParakhMaan | AI Quality Inspection & Legal Metrology Compliance',
+  description: 'AI & computer-vision product defect inspection with an optional Legal Metrology compliance module',
 };
 
 export default function RootLayout({
@@ -17,10 +18,10 @@ export default function RootLayout({
       <body className="min-h-screen bg-[#f6f5f4] text-[#000000] flex flex-col">
         <Navbar />
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {children}
+          <AuthGate>{children}</AuthGate>
         </main>
         <footer className="bg-white border-t border-[#e6e6e6] py-6 text-center text-xs text-[#615d59]">
-          <p>© 2026 Department of Consumer Affairs • Legal Metrology Division • SIH26034 Platform</p>
+          <p>© 2026 Team Tarang • ParakhMaan • Indux 5.0 Problem Statement 12</p>
         </footer>
       </body>
     </html>

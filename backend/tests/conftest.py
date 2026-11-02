@@ -8,5 +8,11 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{os.path.join(_TMP, 'test.db')
 os.environ.setdefault("STORAGE_DIR", os.path.join(_TMP, "storage"))
 os.environ.setdefault("REPORTS_DIR", os.path.join(_TMP, "storage", "reports"))
 os.environ.setdefault("DEFECT_SAMPLES_DIR", os.path.join(_TMP, "storage", "defect_samples"))
+os.environ.setdefault("EDGE_QUEUE_DB", os.path.join(_TMP, "edge_outbox.db"))
 # Keep API / OpenCV assertions deterministic; tests that need the ONNX model load it explicitly.
 os.environ["DEFECT_MODEL_PATH"] = ""
+os.environ["JOB_MODE"] = "eager"
+os.environ["REDIS_URL"] = ""
+os.environ["STORAGE_BACKEND"] = "local"
+os.environ["ENVIRONMENT"] = "development"
+os.environ["SEED_DEMO_DATA"] = "true"

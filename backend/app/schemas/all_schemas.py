@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, computed_field
 
 # --- Auth Schemas ---
 class Token(BaseModel):
@@ -13,10 +13,18 @@ class TokenData(BaseModel):
     role: Optional[str] = None
 
 class UserCreate(BaseModel):
-    email: EmailStr
-    full_name: str
-    password: str
-    role: str = "INSPECTOR"
+    # Plain format check: plant networks often use internal domains (e.g. ".local") that EmailStr rejects.
+    email: str = Field(..., max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    full_name: str = Field(..., min_length=2, max_length=255)
+    password: str = Field(..., min_length=10, max_length=128)
+    role: str = "OPERATOR"
+    badge_number: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = Field(None, min_length=2, max_length=255)
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = Field(None, min_length=10, max_length=128)
     badge_number: Optional[str] = None
 
 class UserResponse(BaseModel):
@@ -25,6 +33,7 @@ class UserResponse(BaseModel):
     full_name: str
     role: str
     badge_number: Optional[str] = None
+    organization_id: Optional[str] = None
     is_active: bool
     created_at: datetime
 
@@ -56,7 +65,15 @@ class ImageResponse(BaseModel):
     quality_score: float
     quality_metadata: Optional[Dict[str, Any]] = None
     ocr_raw_data: Optional[List[Dict[str, Any]]] = None
+    review_status: Optional[str] = "UNREVIEWED"
+    dataset_split: Optional[str] = None
     created_at: datetime
+
+    @computed_field
+    @property
+    def file_url(self) -> Optional[str]:
+        from app.services.storage_service import storage_service
+        return storage_service.signed_url(self.file_path)
 
     class Config:
         from_attributes = True
@@ -180,6 +197,11 @@ class InspectionResponse(BaseModel):
     id: str
     inspection_number: str
     inspection_mode: Optional[str] = "LEGAL_METROLOGY"
+    product_id: Optional[str] = None
+    station_id: Optional[str] = None
+    shift: Optional[str] = None
+    batch_code: Optional[str] = None
+    source: Optional[str] = None
     product_name: Optional[str] = None
     brand_name: Optional[str] = None
     category: str
@@ -235,10 +257,15 @@ class DashboardSummaryResponse(BaseModel):
 
 # --- Defect Inspection Mode Schemas ---
 class DefectInspectionCreate(BaseModel):
+    product_id: Optional[str] = None
+    station_id: Optional[str] = None
+    shift: Optional[str] = Field(None, max_length=20)
+    batch_code: Optional[str] = Field(None, max_length=100)
+    # Free-text fallbacks when no product / station records are selected
     product_name: Optional[str] = None
-    brand_name: Optional[str] = None  # batch / lot identifier
-    category: str = "GENERAL_MANUFACTURED"  # product line, e.g. METAL_SHEET, CASTING, CERAMIC_TILE
-    location: Optional[str] = None  # production line / station
+    brand_name: Optional[str] = None  # legacy alias for batch_code
+    category: str = "GENERAL_MANUFACTURED"  # product family, e.g. METAL_SHEET, CASTING, CERAMIC_TILE
+    location: Optional[str] = None
     notes: Optional[str] = None
 
 class DefectDetectionResponse(BaseModel):
@@ -251,6 +278,7 @@ class DefectDetectionResponse(BaseModel):
     bbox: List[float] = []
     area_ratio: float = 0.0
     detector: str
+    model_version: Optional[str] = None
     metrics: Optional[Dict[str, Any]] = None
     frame_index: Optional[int] = None
     frame_timestamp_ms: Optional[float] = None
@@ -265,6 +293,12 @@ class DefectInspectionDetailResponse(BaseModel):
     id: str
     inspection_number: str
     inspection_mode: Optional[str] = "DEFECT"
+    product_id: Optional[str] = None
+    station_id: Optional[str] = None
+    station_name: Optional[str] = None
+    shift: Optional[str] = None
+    batch_code: Optional[str] = None
+    source: Optional[str] = None
     product_name: Optional[str] = None
     brand_name: Optional[str] = None
     category: str
@@ -302,3 +336,96 @@ class DefectFrameRequest(BaseModel):
 class DefectFinalizeRequest(BaseModel):
     final_remarks: Optional[str] = None
     override_outcome: Optional[str] = None  # PASS, REVIEW, DEFECTIVE
+
+# --- Organisation structure ---
+class PlantCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    location: Optional[str] = None
+
+class LineCreate(BaseModel):
+    plant_id: str
+    name: str = Field(..., min_length=1, max_length=255)
+
+class StationCreate(BaseModel):
+    line_id: str
+    name: str = Field(..., min_length=1, max_length=255)
+    camera_info: Optional[str] = None
+
+class ProductCreate(BaseModel):
+    sku: str = Field(..., min_length=1, max_length=100)
+    name: str = Field(..., min_length=1, max_length=255)
+    family: Optional[str] = None
+    material: Optional[str] = None
+
+class ProductResponse(BaseModel):
+    id: str
+    sku: str
+    name: str
+    family: Optional[str] = None
+    material: Optional[str] = None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class StationResponse(BaseModel):
+    id: str
+    line_id: str
+    name: str
+    camera_info: Optional[str] = None
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+class LineResponse(BaseModel):
+    id: str
+    plant_id: str
+    name: str
+    stations: List[StationResponse] = []
+
+    class Config:
+        from_attributes = True
+
+class PlantResponse(BaseModel):
+    id: str
+    name: str
+    location: Optional[str] = None
+    lines: List[LineResponse] = []
+
+    class Config:
+        from_attributes = True
+
+# --- Edge devices ---
+class EdgeDeviceCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    station_id: Optional[str] = None
+
+class EdgeDeviceResponse(BaseModel):
+    id: str
+    name: str
+    station_id: Optional[str] = None
+    key_prefix: str
+    is_active: bool
+    last_seen_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# --- Background jobs ---
+class JobResponse(BaseModel):
+    id: str
+    job_type: str
+    status: str
+    progress: float
+    message: Optional[str] = None
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    inspection_id: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

@@ -1,22 +1,21 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from app.api.deps import get_org_inspection, require
 from app.core.database import get_db
-from app.models.all_models import Inspection
+from app.models.all_models import User
 from app.services.pdf_report_service import pdf_report_service
 
 router = APIRouter(prefix="/inspections", tags=["Reports"])
 
 @router.get("/{id}/report")
-def get_pdf_report(id: str, db: Session = Depends(get_db)):
-    insp = db.query(Inspection).filter(Inspection.id == id).first()
-    if not insp:
-        raise HTTPException(status_code=404, detail="Inspection not found")
+def get_pdf_report(id: str, db: Session = Depends(get_db), current_user: User = Depends(require("inspection:read"))):
+    insp = get_org_inspection(db, id, current_user)
 
     if insp.inspection_mode == "DEFECT":
         from app.api.defects import get_defect_report
-        return get_defect_report(id, db)
+        return get_defect_report(insp, db)
 
     # If PDF exists, serve it, otherwise generate it
     if insp.report_path and os.path.exists(insp.report_path):

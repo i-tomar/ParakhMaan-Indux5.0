@@ -1,0 +1,13 @@
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+.env
+*.db
+*.db.bak-*
+storage/uploads/
+storage/cache/
+storage/reports/
+storage/defect_samples/
+storage/demo_images/
+storage/demo_defects/
+storage/edge_outbox.db*

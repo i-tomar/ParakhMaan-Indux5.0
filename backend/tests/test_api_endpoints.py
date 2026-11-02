@@ -1,27 +1,26 @@
-import pytest
-from fastapi.testclient import TestClient
-from app.main import app
-
-client = TestClient(app)
+from tests.helpers import anonymous_client, client_for
 
 def test_health_endpoint():
-    response = client.get("/api/health")
+    response = anonymous_client().get("/api/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
     assert "Legal Metrology" in data["service"]
 
 def test_auth_login():
+    client = anonymous_client()
     response = client.post(
         "/api/v1/auth/login",
-        json={"email": "inspector@gov.in", "password": "demo"}
+        json={"email": "operator@parakhmaan.local", "password": "ParakhMaan@2026"}
     )
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
-    assert data["user"]["email"] == "inspector@gov.in"
+    assert data["user"]["email"] == "operator@parakhmaan.local"
+    assert data["user"]["role"] == "OPERATOR"
 
 def test_inspection_crud_and_demo():
+    client = client_for("ADMIN")
     # 1. Test Seed Demo data
     seed_res = client.post("/api/v1/demo/seed")
     assert seed_res.status_code == 200

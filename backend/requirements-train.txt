@@ -1,0 +1,11 @@
+# Training stack for the worker (MODEL_TRAINING jobs). Installed in addition to requirements.txt.
+# torch / torchvision come from the CPU wheel index and ultralytics is installed with --no-deps
+# (see Dockerfile) so it does not pull opencv-python on top of opencv-python-headless.
+matplotlib>=3.8
+pyyaml>=6.0
+scipy>=1.11
+psutil>=5.9
+polars>=1.0
+ultralytics-thop>=2.0
+onnx>=1.17
+requests>=2.31

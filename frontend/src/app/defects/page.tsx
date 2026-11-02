@@ -3,8 +3,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { defectApi } from '@/lib/api';
-import { DefectDetectorStatus, DefectInspection } from '@/lib/types';
+import { defectApi, jobsApi, orgApi } from '@/lib/api';
+import { can } from '@/lib/auth';
+import { useAuthUser } from '@/lib/useAuth';
+import { DefectDetectorStatus, DefectInspection, PlantNode, Product } from '@/lib/types';
 import { defectColor, defectLabel, outcomeStyle } from '@/lib/defects';
 import { formatDate } from '@/lib/formatters';
 import CameraCaptureModal from '@/components/CameraCaptureModal';
@@ -38,10 +40,24 @@ const PRODUCT_LINES = [
 export default function DefectInspectionPage() {
   const router = useRouter();
 
+  const user = useAuthUser();
   const [productName, setProductName] = useState('');
   const [batch, setBatch] = useState('');
   const [category, setCategory] = useState('METAL_SHEET');
-  const [station, setStation] = useState('Line 1 · Final QC');
+  const [productId, setProductId] = useState('');
+  const [stationId, setStationId] = useState('');
+  const [shift, setShift] = useState('');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [plants, setPlants] = useState<PlantNode[]>([]);
+  const stationOptions = useMemo(
+    () =>
+      plants.flatMap((p) =>
+        p.lines.flatMap((l) =>
+          l.stations.filter((s) => s.is_active).map((s) => ({ id: s.id, label: `${p.name} / ${l.name} / ${s.name}` }))
+        )
+      ),
+    [plants]
+  );
 
   const [tab, setTab] = useState<SourceTab>('IMAGES');
   const [queue, setQueue] = useState<QueuedImage[]>([]);
@@ -75,6 +91,8 @@ export default function DefectInspectionPage() {
   useEffect(() => {
     loadRecent();
     defectApi.getStatus().then(setStatus).catch(() => setStatus(null));
+    orgApi.products().then(setProducts).catch(() => setProducts([]));
+    orgApi.tree().then(setPlants).catch(() => setPlants([]));
   }, []);
 
   const handleSeed = async () => {
@@ -125,10 +143,12 @@ export default function DefectInspectionPage() {
     try {
       setProgress('Creating inspection…');
       const insp = await defectApi.createInspection({
-        product_name: productName || 'Unnamed Product',
-        brand_name: batch || undefined,
+        product_id: productId || undefined,
+        station_id: stationId || undefined,
+        shift: shift || undefined,
+        batch_code: batch || undefined,
+        product_name: productId ? undefined : productName || 'Unnamed Product',
         category,
-        location: station,
       });
 
       if (reference) {
@@ -147,8 +167,11 @@ export default function DefectInspectionPage() {
       }
 
       if (video) {
-        setProgress(`Sampling video at ${sampleFps} fps (up to ${maxFrames} frames)…`);
-        await defectApi.analyzeVideo(insp.id, video, { sampleFps, maxFrames });
+        setProgress('Uploading video…');
+        const job = await defectApi.analyzeVideo(insp.id, video, { sampleFps, maxFrames });
+        await jobsApi.waitFor(job.id, (j) =>
+          setProgress(`${Math.round(j.progress * 100)}% · ${j.message || 'Processing video'}`)
+        );
       }
 
       router.push(`/defects/${insp.id}`);
@@ -182,22 +205,26 @@ export default function DefectInspectionPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 whitespace-nowrap">
-          <button
-            type="button"
-            onClick={handleSeed}
-            disabled={seeding}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 text-[#0075de] ${seeding ? 'animate-spin' : ''}`} />
-            <span>{seeding ? 'Loading…' : 'Load Demo Samples'}</span>
-          </button>
-          <Link
-            href="/defects/analytics"
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-[#213183] text-white hover:bg-[#1a2768] transition-all shadow-xs"
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Defect Analytics</span>
-          </Link>
+          {can(user, 'system:configure') && (
+            <button
+              type="button"
+              onClick={handleSeed}
+              disabled={seeding}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 text-[#0075de] ${seeding ? 'animate-spin' : ''}`} />
+              <span>{seeding ? 'Loading…' : 'Load Demo Samples'}</span>
+            </button>
+          )}
+          {can(user, 'analytics:read') && (
+            <Link
+              href="/defects/analytics"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold bg-[#213183] text-white hover:bg-[#1a2768] transition-all shadow-xs"
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Defect Analytics</span>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -231,6 +258,12 @@ export default function DefectInspectionPage() {
         </div>
       )}
 
+      {!can(user, 'inspection:write') && (
+        <div className="p-4 bg-[#f6f5f4] border border-[#e6e6e6] rounded-xl text-xs text-[#31302e]">
+          Your role has read-only access. Inspection records, evidence and reports are available below.
+        </div>
+      )}
+      {can(user, 'inspection:write') && (
       <form onSubmit={handleRun} className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-8 space-y-6">
           {/* Step 1: product metadata */}
@@ -241,14 +274,28 @@ export default function DefectInspectionPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
               <div>
-                <label className="block font-semibold text-[#31302e] mb-1">Product / Part Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Cold-Rolled Steel Panel"
-                  value={productName}
-                  onChange={(e) => setProductName(e.target.value)}
-                  className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
-                />
+                <label className="block font-semibold text-[#31302e] mb-1">Product / Part</label>
+                {products.length > 0 && (
+                  <select
+                    value={productId}
+                    onChange={(e) => setProductId(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4] mb-1.5"
+                  >
+                    <option value="">Other (type a name)…</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name} · {p.sku}</option>
+                    ))}
+                  </select>
+                )}
+                {!productId && (
+                  <input
+                    type="text"
+                    placeholder="e.g. Cold-Rolled Steel Panel"
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
+                  />
+                )}
               </div>
               <div>
                 <label className="block font-semibold text-[#31302e] mb-1">Batch / Lot</label>
@@ -260,26 +307,45 @@ export default function DefectInspectionPage() {
                   className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
                 />
               </div>
+              {!productId && (
+                <div>
+                  <label className="block font-semibold text-[#31302e] mb-1">Product Family</label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
+                  >
+                    {PRODUCT_LINES.map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
-                <label className="block font-semibold text-[#31302e] mb-1">Product Line</label>
+                <label className="block font-semibold text-[#31302e] mb-1">Plant / Line / Station</label>
                 <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  value={stationId}
+                  onChange={(e) => setStationId(e.target.value)}
                   className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
                 >
-                  {PRODUCT_LINES.map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
+                  <option value="">Not specified</option>
+                  {stationOptions.map((s) => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block font-semibold text-[#31302e] mb-1">Production Line / Station</label>
-                <input
-                  type="text"
-                  value={station}
-                  onChange={(e) => setStation(e.target.value)}
+                <label className="block font-semibold text-[#31302e] mb-1">Shift</label>
+                <select
+                  value={shift}
+                  onChange={(e) => setShift(e.target.value)}
                   className="w-full px-3 py-2 border border-[#e6e6e6] rounded-md focus:outline-none focus:border-[#0075de] bg-[#f6f5f4]"
-                />
+                >
+                  <option value="">Auto (by time of day)</option>
+                  <option value="A">Shift A (06–14)</option>
+                  <option value="B">Shift B (14–22)</option>
+                  <option value="C">Shift C (22–06)</option>
+                </select>
               </div>
             </div>
           </div>
@@ -470,6 +536,7 @@ export default function DefectInspectionPage() {
           </button>
         </div>
       </form>
+      )}
 
       {/* Recent defect inspections */}
       <div className="bg-white rounded-xl border border-[#e6e6e6] overflow-hidden elevation-0">
@@ -514,7 +581,7 @@ export default function DefectInspectionPage() {
                     <tr key={insp.id} className="hover:bg-[#f6f5f4]/80 transition-colors">
                       <td className="py-3 px-4 font-mono font-bold text-[#213183]">{insp.inspection_number}</td>
                       <td className="py-3 px-4 font-semibold text-[#000000]">{insp.product_name || 'Unnamed Product'}</td>
-                      <td className="py-3 px-4 text-[#615d59]">{insp.brand_name || '—'}</td>
+                      <td className="py-3 px-4 text-[#615d59]">{insp.batch_code || insp.brand_name || '—'}</td>
                       <td className="py-3 px-4 font-bold text-[#000000]">{insp.defect_count ?? 0}</td>
                       <td className="py-3 px-4">
                         {insp.top_defect_type ? (

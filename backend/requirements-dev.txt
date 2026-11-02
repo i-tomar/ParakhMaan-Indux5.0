@@ -1,0 +1,5 @@
+-r requirements.txt
+-r requirements-train.txt
+pytest>=8.0.0
+moto[s3]>=5.0.0
+# For local training also install:  pip install torch torchvision && pip install --no-deps ultralytics
