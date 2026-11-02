@@ -1,0 +1,98 @@
+{
+  "data": "real images: 43 files from storage/demo_samples/metal_nut, cycled for 200 runs",
+  "measured_at": "2026-11-01T20:29:29+00:00",
+  "label": "Docker linux/arm64 container on Apple M1 Pro (Docker Desktop VM)",
+  "device": {
+    "machine": "aarch64",
+    "system": "Linux",
+    "release": "7.0.14-linuxkit",
+    "python": "3.12.16",
+    "onnxruntime": "1.31.1",
+    "opencv": "4.14.0",
+    "cpu_count": 10,
+    "providers": [
+      "AzureExecutionProvider",
+      "CPUExecutionProvider"
+    ],
+    "in_container": true
+  },
+  "product": "metal_nut",
+  "models": {
+    "segmentation": {
+      "loaded": true,
+      "version": "production.onnx",
+      "error": null,
+      "classes": [
+        "SCRATCH",
+        "CRACK",
+        "DENT",
+        "DISCOLOURATION",
+        "DIMENSIONAL_ANOMALY"
+      ],
+      "input_size": 640,
+      "providers": [
+        "CPUExecutionProvider"
+      ]
+    },
+    "anomaly": {
+      "loaded": true,
+      "error": null,
+      "input_size": 256,
+      "products": [
+        "bottle",
+        "cable",
+        "capsule",
+        "carpet",
+        "grid",
+        "hazelnut",
+        "leather",
+        "metal_nut",
+        "pill",
+        "screw",
+        "tile",
+        "toothbrush",
+        "transistor",
+        "wood",
+        "zipper"
+      ],
+      "versions": {
+        "bottle": "bottle-base",
+        "cable": "cable-base",
+        "capsule": "capsule-base",
+        "carpet": "carpet-base",
+        "grid": "grid-base",
+        "hazelnut": "hazelnut-base",
+        "leather": "leather-base",
+        "metal_nut": "metal_nut-base",
+        "pill": "pill-base",
+        "screw": "screw-base",
+        "tile": "tile-base",
+        "toothbrush": "toothbrush-base",
+        "transistor": "transistor-base",
+        "wood": "wood-base",
+        "zipper": "zipper-base"
+      }
+    },
+    "classical": {
+      "loaded": true,
+      "opencv": "4.14.0"
+    }
+  },
+  "runs": 200,
+  "frame_sizes": [
+    "700x700"
+  ],
+  "latency_ms": {
+    "p50": 365.1,
+    "p95": 494.3,
+    "p99": 639.9,
+    "mean": 378.24,
+    "max": 742.3
+  },
+  "throughput_fps_sequential": 2.64,
+  "stage_ms_p50": {
+    "segmentation_ms": 210.0,
+    "anomaly_ms": 152.5
+  },
+  "not_measured": "No embedded edge device (Jetson, Raspberry Pi, industrial PC) was available; figures apply only to the device above."
+}

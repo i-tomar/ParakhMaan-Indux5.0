@@ -1,7 +1,7 @@
 import os
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import settings
@@ -43,7 +43,13 @@ def create_synthetic_image(filename: str, text_lines: list[str], is_blurry: bool
     return file_path
 
 @router.post("/seed")
-def seed_demo_data(db: Session = Depends(get_db)):
+def seed_demo_endpoint(db: Session = Depends(get_db)):
+    if not settings.DEMO_MODE:
+        raise HTTPException(status_code=403, detail="Demo seeding is only available with DEMO_MODE=true")
+    return seed_demo_data(db)
+
+
+def seed_demo_data(db: Session):
     # Check if demo data already seeded
     existing = db.query(Inspection).filter(Inspection.inspection_number.like("INSP-DEMO-%")).first()
     if existing:
@@ -54,7 +60,7 @@ def seed_demo_data(db: Session = Depends(get_db)):
         inspector = User(
             email="inspector@gov.in",
             full_name="Senior Legal Metrology Inspector",
-            hashed_password="demo",
+            hashed_password="!",  # no login: demo accounts come from ensure_demo_accounts
             role="INSPECTOR",
             badge_number="LM-IND-01"
         )

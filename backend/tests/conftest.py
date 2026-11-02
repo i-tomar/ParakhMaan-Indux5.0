@@ -10,3 +10,10 @@ os.environ.setdefault("REPORTS_DIR", os.path.join(_TMP, "storage", "reports"))
 os.environ.setdefault("DEFECT_SAMPLES_DIR", os.path.join(_TMP, "storage", "defect_samples"))
 # Keep API / OpenCV assertions deterministic; tests that need the ONNX model load it explicitly.
 os.environ["DEFECT_MODEL_PATH"] = ""
+os.environ.setdefault("SEG_MODEL_PATH", "")
+os.environ.setdefault("ANOMALY_BACKBONE_PATH", "")
+# Legacy tests exercise routes anonymously; test_security.py switches authentication on itself.
+os.environ["AUTH_REQUIRED"] = "false"
+os.environ["DEMO_MODE"] = "true"
+os.environ["DEMO_PASSWORD"] = "demo"
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-with-sufficient-length-0123456789")

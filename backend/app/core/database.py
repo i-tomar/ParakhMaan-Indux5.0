@@ -18,6 +18,11 @@ Base = declarative_base()
 # was first created are back-filled here: (table, column, DDL type + default).
 _ADDED_COLUMNS = [
     ("inspections", "inspection_mode", "VARCHAR(30) DEFAULT 'LEGAL_METROLOGY'"),
+    ("defect_detections", "unit_id", "VARCHAR(36)"),
+    ("defect_detections", "model_version", "VARCHAR(120)"),
+    ("defect_detections", "length_mm", "FLOAT"),
+    ("defect_detections", "width_mm", "FLOAT"),
+    ("defect_detections", "area_mm2", "FLOAT"),
 ]
 
 def run_lightweight_migrations() -> None:

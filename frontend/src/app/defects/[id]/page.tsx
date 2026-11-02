@@ -3,6 +3,8 @@
 import React, { use, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { defectApi, getStorageUrl } from '@/lib/api';
+import { openProtectedFile } from '@/lib/api';
+import { ProtectedImg } from '@/components/ProtectedImg';
 import { DefectDetection, DefectInspection } from '@/lib/types';
 import { defectColor, defectLabel, outcomeStyle } from '@/lib/defects';
 import { formatDateTime } from '@/lib/formatters';
@@ -159,15 +161,14 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
               onChange={(e) => handleAddImages(e.target.files)}
             />
           </label>
-          <a
-            href={defectApi.getReportUrl(inspection.id)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openProtectedFile(defectApi.getReportUrl(inspection.id))}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs"
           >
             <Download className="w-4 h-4 text-[#0075de]" />
             <span>Download Defect Report (PDF)</span>
-          </a>
+          </button>
           {inspection.status !== 'FINALIZED' && (
             <button
               onClick={handleFinalize}
@@ -253,8 +254,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
                       img.id === activeImage?.id ? 'border-[#0075de]' : 'border-transparent opacity-80 hover:opacity-100'
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={getStorageUrl(img.file_path)} alt={img.original_filename} className="w-24 h-16 object-cover" />
+                    <ProtectedImg src={getStorageUrl(img.file_path)} alt={img.original_filename} className="w-24 h-16 object-cover" />
                     <span className="absolute top-1 left-1 p-0.5 rounded bg-black/60 text-white">
                       {isVideo ? <Film className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                     </span>
@@ -362,8 +362,7 @@ export default function DefectResultPage({ params }: { params: Promise<{ id: str
 
           {referenceImage && (
             <div className="bg-white rounded-xl border border-[#e6e6e6] p-4 elevation-0 flex items-center gap-3">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={getStorageUrl(referenceImage.file_path)} alt="Golden reference" className="w-16 h-16 object-cover rounded-md border border-[#e6e6e6]" />
+              <ProtectedImg src={getStorageUrl(referenceImage.file_path)} alt="Golden reference" className="w-16 h-16 object-cover rounded-md border border-[#e6e6e6]" />
               <div>
                 <p className="text-xs font-bold text-[#000000] flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-[#1aae39]" />

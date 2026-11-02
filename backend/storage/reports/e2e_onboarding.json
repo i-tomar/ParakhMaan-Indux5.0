@@ -1,0 +1,14 @@
+{
+ "test": "R-32 new-product onboarding entirely through the API (run 2026-11-02, local backend)",
+ "data": "real MVTec AD wood images used as an unseen product 'onboard_panel': 80 fit-split goods + 25 train-split defects as samples; 12 test-split images inspected afterwards",
+ "steps": {
+  "create_product": "200 onboard_panel",
+  "samples": {"GOOD": 80, "DEFECTIVE": 25},
+  "dataset_version_samples": 105,
+  "training_job": "SUCCEEDED onboard_panel-anomaly-v1",
+  "holdout_metrics": {"holdout_good": 16, "holdout_defective": 5, "image_auroc": 1.0, "recall": 1.0, "false_reject_rate": 0.0, "train_images": 64, "fit_seconds": 5.81},
+  "promote": "200 PRODUCTION (gate passed)",
+  "inspection_on_test_split": {"good": "9/9 ACCEPT", "defective": "3/3 MANUAL_REVIEW", "model_used": "onboard_panel-anomaly-v1"}
+ },
+ "limitation": "Holdout has only 5 defective images; the 1.0 scores are not a reliable estimate. New products get anomaly detection; supervised class labels need retraining YOLO-seg with labelled masks (ml/train_yolo_seg.py), which is not automated."
+}

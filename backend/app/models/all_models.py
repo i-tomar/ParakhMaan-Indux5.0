@@ -167,6 +167,11 @@ class DefectDetection(Base):
     frame_timestamp_ms = Column(Float, nullable=True)
     reviewer_status = Column(String(20), default="PENDING")  # PENDING, CONFIRMED, REJECTED, RELABELED
     reviewer_note = Column(Text, nullable=True)
+    unit_id = Column(String(36), nullable=True, index=True)  # production_units.id
+    model_version = Column(String(120), nullable=True)
+    length_mm = Column(Float, nullable=True)  # only with a calibration
+    width_mm = Column(Float, nullable=True)
+    area_mm2 = Column(Float, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inspection = relationship("Inspection", back_populates="defect_detections")

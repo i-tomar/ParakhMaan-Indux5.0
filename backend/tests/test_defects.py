@@ -16,7 +16,7 @@ from app.services.defect_detection_service import (
 client = TestClient(app)
 detector = DefectDetector(model_path="", backend="opencv")
 
-MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "storage", "models", "best.onnx")
+MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "storage", "models", "legacy", "best.onnx")
 requires_model = pytest.mark.skipif(not os.path.exists(MODEL_PATH), reason="trained ONNX model not present")
 
 
@@ -134,7 +134,7 @@ def test_trained_model_loads_with_probed_input_size():
 
 @requires_model
 def test_relative_model_path_and_names_file_are_resolved():
-    hybrid = DefectDetector(model_path="storage/models/best.onnx", model_classes="", backend="hybrid")
+    hybrid = DefectDetector(model_path="storage/models/legacy/best.onnx", model_classes="", backend="hybrid")
     assert hybrid.status()["model_loaded"] is True
     assert hybrid.status()["model_classes"] == ["scratch", "crack", "dent", "discolouration"]
 

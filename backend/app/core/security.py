@@ -1,32 +1,49 @@
 import hashlib
+import hmac
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Any
+from typing import Any, Optional, Tuple
+
+import bcrypt
 import jwt
+
 from app.core.config import settings
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # Use SHA-256 with salt prefix or plain comparison for robust cross-environment reliability
-    salt = "sih26034_salt"
-    computed = hashlib.sha256((plain_password + salt).encode()).hexdigest()
-    return computed == hashed_password or plain_password == hashed_password
+_LEGACY_SALT = "sih26034_salt"
+
+
+def _bcrypt_input(password: str) -> bytes:
+    # bcrypt reads at most 72 bytes; pre-hashing keeps long passwords fully significant.
+    return hashlib.sha256(password.encode()).hexdigest().encode()
+
 
 def get_password_hash(password: str) -> str:
-    salt = "sih26034_salt"
-    return hashlib.sha256((password + salt).encode()).hexdigest()
+    return bcrypt.hashpw(_bcrypt_input(password), bcrypt.gensalt()).decode()
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return verify_and_upgrade(plain_password, hashed_password)[0]
+
+
+def verify_and_upgrade(plain_password: str, hashed_password: str) -> Tuple[bool, Optional[str]]:
+    """Checks a password. Old SHA-256 rows pass once, and a bcrypt replacement is returned for saving."""
+    if hashed_password.startswith("$2"):
+        try:
+            return bcrypt.checkpw(_bcrypt_input(plain_password), hashed_password.encode()), None
+        except ValueError:
+            return False, None
+    legacy = hashlib.sha256((plain_password + _LEGACY_SALT).encode()).hexdigest()
+    if hmac.compare_digest(legacy, hashed_password):
+        return True, get_password_hash(plain_password)
+    return False, None
+
 
 def create_access_token(subject: str | Any, role: str, expires_delta: Optional[timedelta] = None) -> str:
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode = {"exp": expire, "sub": str(subject), "role": role}
-    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
-    return encoded_jwt
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    return jwt.encode({"exp": expire, "sub": str(subject), "role": role}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
 
 def decode_access_token(token: str) -> Optional[dict]:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        return payload
-    except Exception:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.PyJWTError:
         return None

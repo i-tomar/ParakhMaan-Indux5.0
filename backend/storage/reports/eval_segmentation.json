@@ -1,0 +1,145 @@
+{
+  "data": "real images, MVTec AD held-out test split, labels mapped per ml/datasets/label_map.py",
+  "name": "yolo11n_seg.onnx",
+  "split": "test",
+  "box": {
+    "map50": 0.6061,
+    "map50_95": 0.3729,
+    "precision": 0.6643,
+    "recall": 0.5619
+  },
+  "mask": {
+    "map50": 0.5845,
+    "map50_95": 0.3144
+  },
+  "per_class": [
+    {
+      "name": "SCRATCH",
+      "instances": 53,
+      "precision": 0.7588,
+      "recall": 0.7715,
+      "f1": 0.7651,
+      "ap50": 0.7958,
+      "ap50_95": 0.4902,
+      "mask_ap50": 0.743,
+      "mask_ap50_95": 0.3865
+    },
+    {
+      "name": "CRACK",
+      "instances": 37,
+      "precision": 0.6628,
+      "recall": 0.5845,
+      "f1": 0.6212,
+      "ap50": 0.6181,
+      "ap50_95": 0.3981,
+      "mask_ap50": 0.6502,
+      "mask_ap50_95": 0.3169
+    },
+    {
+      "name": "DENT",
+      "instances": 21,
+      "precision": 0.6021,
+      "recall": 0.4762,
+      "f1": 0.5318,
+      "ap50": 0.5513,
+      "ap50_95": 0.3221,
+      "mask_ap50": 0.5857,
+      "mask_ap50_95": 0.3189
+    },
+    {
+      "name": "DISCOLOURATION",
+      "instances": 69,
+      "precision": 0.7509,
+      "recall": 0.6232,
+      "f1": 0.6811,
+      "ap50": 0.6739,
+      "ap50_95": 0.4579,
+      "mask_ap50": 0.6231,
+      "mask_ap50_95": 0.403
+    },
+    {
+      "name": "DIMENSIONAL_ANOMALY",
+      "instances": 48,
+      "precision": 0.5468,
+      "recall": 0.3542,
+      "f1": 0.4299,
+      "ap50": 0.3916,
+      "ap50_95": 0.196,
+      "mask_ap50": 0.3205,
+      "mask_ap50_95": 0.1466
+    }
+  ],
+  "image_level": {
+    "confidence": 0.25,
+    "tp": 139,
+    "fp": 1,
+    "fn": 25,
+    "tn": 233,
+    "precision": 0.9929,
+    "recall": 0.8476,
+    "f1": 0.9145,
+    "miss_rate": 0.1524,
+    "false_reject_rate": 0.0043,
+    "recall_by_defect_size": {
+      "small (<0.5% area)": {
+        "images": 56,
+        "recall": 0.7321
+      },
+      "medium": {
+        "images": 86,
+        "recall": 0.8837
+      },
+      "large (>5% area)": {
+        "images": 22,
+        "recall": 1.0
+      }
+    },
+    "most_missed": [
+      [
+        "screw/manipulated_front",
+        5
+      ],
+      [
+        "cable/poke_insulation",
+        2
+      ],
+      [
+        "capsule/poke",
+        2
+      ],
+      [
+        "capsule/squeeze",
+        2
+      ],
+      [
+        "transistor/bent_lead",
+        2
+      ],
+      [
+        "transistor/cut_lead",
+        2
+      ],
+      [
+        "cable/cut_outer_insulation",
+        1
+      ],
+      [
+        "capsule/crack",
+        1
+      ],
+      [
+        "capsule/scratch",
+        1
+      ],
+      [
+        "leather/cut",
+        1
+      ]
+    ]
+  },
+  "onnx_cpu_latency_ms": {
+    "p50": 54.5,
+    "p95": 60.6
+  },
+  "onnx_size_mb": 11.69
+}

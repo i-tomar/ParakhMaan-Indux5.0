@@ -3,6 +3,7 @@
 import React, { useEffect, useState, use } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { openProtectedFile } from '@/lib/api';
 import { Inspection, ComplianceResult } from '@/lib/types';
 import EvidenceViewer from '@/components/EvidenceViewer';
 import ComplianceMatrix from '@/components/ComplianceMatrix';
@@ -174,15 +175,14 @@ export default function InspectionDetailPage({ params }: { params: Promise<{ id:
           </button>
 
           {/* Download Official PDF Report */}
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openProtectedFile(reportUrl)}
             className="flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-semibold bg-white text-[#31302e] border border-[#e6e6e6] hover:bg-[#f6f5f4] transition-all shadow-xs"
           >
             <Download className="w-4 h-4 text-[#0075de]" />
             <span>Download Official PDF Report</span>
-          </a>
+          </button>
 
           {/* Finalize Button */}
           {inspection.status !== 'FINALIZED' && (

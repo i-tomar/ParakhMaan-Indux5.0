@@ -423,4 +423,38 @@ class PDFReportService:
         doc.build(elements)
         return output_path
 
+    def generate_batch_report(self, data: Dict[str, Any]) -> str:
+        output_path = os.path.join(settings.REPORTS_DIR, f"Batch_Report_{data['batch']}.pdf".replace("/", "_"))
+        styles = getSampleStyleSheet()
+        doc = SimpleDocTemplate(output_path, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+        safe = self._sanitize_pdf_text
+        k = data["kpis"]
+        percent = lambda v: "n/a" if v is None else f"{v * 100:.1f}%"
+
+        def table(rows: List[List[Any]]) -> Table:
+            t = Table(rows, hAlign="LEFT")
+            t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f6f5f4")), ("FONTSIZE", (0, 0), (-1, -1), 9),
+                                   ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e6e6e6")), ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold")]))
+            return t
+
+        story: List[Any] = [
+            Paragraph("ParakhMaan Batch Quality Report", styles["Title"]),
+            Paragraph(f"Batch {safe(data['batch'])} | Product: {safe(data['product'])} | Status: {safe(data['status'])}", styles["Normal"]),
+            Paragraph(f"Generated {datetime.now():%Y-%m-%d %H:%M}", styles["Normal"]), Spacer(1, 10),
+        ]
+        if data.get("is_synthetic"):
+            story += [Paragraph("<b>SIMULATED BATCH.</b> Part images are real; production context is simulated.", styles["Normal"]), Spacer(1, 8)]
+        story += [table([["Units", "Accepted", "Rejected", "Manual review", "First-pass yield", "Rejection rate"],
+                         [k["units"], k["accepted"], k["rejected"], k["manual_review"], percent(k["first_pass_yield"]), percent(k["rejection_rate"])]]),
+                  Spacer(1, 12), Paragraph("Defects by type", styles["Heading2"])]
+        story.append(table([["Defect", "Count", "Share", "Cumulative"]] + [[safe(r["defect_type"]), r["count"], percent(r["share"]), percent(r["cumulative"])] for r in data["pareto"]])
+                     if data["pareto"] else Paragraph("No defects recorded.", styles["Normal"]))
+        for title, key in (("By machine", "by_machine"), ("By shift", "by_shift")):
+            if data[key]:
+                story += [Spacer(1, 12), Paragraph(title, styles["Heading2"]),
+                          table([["Group", "Units", "Rejected", "Rate"]] + [[safe(r["group"]), r["units"], r["rejected"], percent(r["rejection_rate"])] for r in data[key]])]
+        doc.build(story)
+        return output_path
+
+
 pdf_report_service = PDFReportService()

@@ -1,0 +1,18 @@
+{
+  "grid": [
+    32,
+    32
+  ],
+  "image_threshold": 1.8295108079910278,
+  "pixel_threshold": 1.6700442453944369,
+  "fit_images": 198,
+  "calibration_images": 49,
+  "coreset_size": 3000,
+  "projection_dim": 192,
+  "seed": 0,
+  "threshold_margin": 1.15,
+  "threshold_source": "F1-optimal on labelled val split (test untouched)",
+  "fit_seconds": 15.59,
+  "good_only_image_threshold": 2.04023385643959,
+  "good_only_pixel_threshold": 1.862399935722351
+}

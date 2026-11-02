@@ -161,7 +161,12 @@ class DefectDetector:
         # Exports usually have a fixed input size; probe for it instead of relying on configuration.
         sizes = [settings.DEFECT_MODEL_INPUT_SIZE] if settings.DEFECT_MODEL_INPUT_SIZE > 0 else []
         sizes += [s for s in (640, 320, 416, 512, 1280) if s not in sizes]
-        previous_log_level = cv2.setLogLevel(0)  # wrong sizes make OpenCV log shape errors
+        # Wrong sizes make OpenCV log shape errors. cv2.setLogLevel is absent from the pip wheels
+        # (the original call raised AttributeError); the supported API is cv2.utils.logging.
+        log = getattr(getattr(cv2, "utils", None), "logging", None)
+        previous_log_level = log.getLogLevel() if log else None
+        if log:
+            log.setLogLevel(log.LOG_LEVEL_SILENT)
         try:
             for size in sizes:
                 try:
@@ -176,7 +181,8 @@ class DefectDetector:
                         self._model_error = f"Model has {outputs} class outputs but {len(self._classes)} class names were given"
                     break
         finally:
-            cv2.setLogLevel(previous_log_level)
+            if log:
+                log.setLogLevel(previous_log_level)
         if self._net is None:
             self._model_error = f"ONNX model did not accept any input size in {sizes}"
 
@@ -833,6 +839,8 @@ def grade_severity(det: Dict[str, Any]) -> str:
     if dtype == "DIMENSIONAL_ANOMALY":
         worst = max(m.get("aspect_deviation", 0.0), m.get("area_deviation", 0.0), m.get("notch_depth_ratio", 0.0))
         return "CRITICAL" if worst >= 0.15 else "HIGH"
+    if dtype == "UNKNOWN_ANOMALY":
+        return "MEDIUM"  # no class means no severity rule: the decision policy sends these to review
     # Unmapped model classes
     return "HIGH" if det.get("confidence", 0) >= 0.7 else "MEDIUM"
 

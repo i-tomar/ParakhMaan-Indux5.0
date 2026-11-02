@@ -1,12 +1,13 @@
-export const DEFECT_TYPES = ['SCRATCH', 'CRACK', 'DENT', 'DISCOLOURATION', 'DIMENSIONAL_ANOMALY'] as const;
+export const DEFECT_TYPES = ['SCRATCH', 'CRACK', 'DENT', 'DISCOLOURATION', 'DIMENSIONAL_ANOMALY', 'UNKNOWN_ANOMALY'] as const;
 
 // Keep in sync with HeatmapService.DEFECT_COLOURS_BGR so server overlays and UI match.
 const DEFECT_META: Record<string, { label: string; color: string }> = {
   SCRATCH: { label: 'Scratch', color: '#0075de' },
-  CRACK: { label: 'Crack', color: '#d9381e' },
-  DENT: { label: 'Dent', color: '#dd5b00' },
-  DISCOLOURATION: { label: 'Discolouration', color: '#2a9d99' },
-  DIMENSIONAL_ANOMALY: { label: 'Dimensional Anomaly', color: '#ff64c8' },
+  CRACK: { label: 'Crack', color: '#c0186b' },
+  DENT: { label: 'Dent', color: '#e07a00' },
+  DISCOLOURATION: { label: 'Discolouration', color: '#0a9a8f' },
+  DIMENSIONAL_ANOMALY: { label: 'Dimensional Anomaly', color: '#7a3fd0' },
+  UNKNOWN_ANOMALY: { label: 'Unknown Anomaly', color: '#6d7a12' },
 };
 
 export function defectColor(type?: string | null): string {
@@ -50,4 +51,14 @@ export const OUTCOME_STYLES: Record<string, { badge: string; banner: string; lab
 
 export function outcomeStyle(outcome?: string) {
   return OUTCOME_STYLES[outcome || 'PENDING'] || OUTCOME_STYLES.PENDING;
+}
+
+export const DECISION_STYLES: Record<string, string> = {
+  ACCEPT: 'bg-green-100 text-[#166534]',
+  REJECT: 'bg-red-100 text-[#991B1B]',
+  MANUAL_REVIEW: 'bg-amber-100 text-[#854D0E]',
+};
+
+export function decisionLabel(decision?: string | null): string {
+  return { ACCEPT: 'Accept', REJECT: 'Reject', MANUAL_REVIEW: 'Manual review' }[decision || ''] || decision || '—';
 }

@@ -24,7 +24,10 @@ from app.services.defect_detection_service import (
     DEFECT_TYPES, compute_outcome, decode_base64_image, defect_detector, grade_severity,
     synthesize_surface_sample
 )
+from app.models.industrial import Product
 from app.services.heatmap_service import heatmap_service
+from app.services.inference.engine import engine, heatmap_data_url
+from app.services.inspection_service import record_unit, run_inspection
 from app.services.image_quality import image_quality_analyzer
 from app.services.pdf_report_service import pdf_report_service
 from app.services.storage_service import storage_service
@@ -94,14 +97,20 @@ def _scan_meta(scan: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "latency_ms": scan["latency_ms"],
         "fps": scan["fps"],
-        "backend": scan["backend"],
+        "backend": scan.get("backend") or "+".join(scan.get("streams", [])),
         "image_size": scan["image_size"],
-        "product_mask_used": scan["product_mask_used"],
+        "product_mask_used": scan.get("product_mask_used", False),
         "reference_used": scan["reference_used"],
+        "streams": scan.get("streams", []),
+        "timings": scan.get("timings", {}),
+        "anomaly": scan.get("anomaly"),
+        "model_versions": scan.get("model_versions", {}),
+        "decision": scan.get("decision"),
+        "reasons": scan.get("reasons", []),
         "mean_brightness": scan["mean_brightness"],
         "exposure_ok": scan["exposure_ok"],
         "detection_count": len(scan["detections"]),
-        "outcome": scan["outcome"],
+        "outcome": scan.get("outcome") or compute_outcome(scan["detections"], quality_issue=not scan["exposure_ok"]),
     }
 
 
@@ -160,15 +169,24 @@ def _describe(detections: List[Dict[str, Any]]) -> str:
     return ", ".join(f"{n} {t.lower().replace('_', ' ')}" for t, n in counts.items())
 
 
+def _product_for(db: Session, insp: Inspection) -> Optional[Product]:
+    if not insp.product_name:
+        return None
+    return db.query(Product).filter((Product.name == insp.product_name) | (Product.key == insp.product_name)).first()
+
+
 def _analyze_and_store(
     db: Session, insp: Inspection, file_path: str, original_filename: str, surface_type: str,
-    user_id: Optional[str], event_type: str
+    user_id: Optional[str], event_type: str, source: str = "UPLOAD"
 ) -> Dict[str, Any]:
     quality = image_quality_analyzer.analyze(file_path)
-    try:
-        scan = defect_detector.detect_file(file_path, _reference_path(insp))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    img = cv2.imread(file_path)
+    if img is None:
+        raise HTTPException(status_code=400, detail=f"Unable to decode image: {original_filename}")
+    ref_path = _reference_path(insp)
+    reference = cv2.imread(ref_path) if ref_path else None
+    scan = run_inspection(db, img, _product_for(db, insp), reference)
+    scan["outcome"] = compute_outcome(scan["detections"], quality_issue=not scan["exposure_ok"])
 
     image = ImageModel(
         inspection_id=insp.id,
@@ -183,11 +201,12 @@ def _analyze_and_store(
     db.commit()
     db.refresh(image)
 
-    rows = _store_detections(db, insp, image, scan["detections"])
+    unit = record_unit(db, scan, img, source=source, inspection_id=insp.id, image_id=image.id, image_path=file_path)
+    rows = unit.detection_rows
     _audit(
         db, insp.id, user_id, event_type,
-        f"{surface_type} analysed in {scan['latency_ms']} ms ({scan['backend']}): {_describe(scan['detections'])}",
-        {"image_id": image.id, "detections": len(rows), "latency_ms": scan["latency_ms"]},
+        f"{surface_type} analysed in {scan['latency_ms']} ms ({'+'.join(scan['streams'])}): {_describe(scan['detections'])}",
+        {"image_id": image.id, "unit_id": unit.id, "detections": len(rows), "latency_ms": scan["latency_ms"]},
     )
     db.commit()
     db.refresh(insp)
@@ -198,6 +217,11 @@ def _analyze_and_store(
         "detections": [DefectDetectionResponse.model_validate(r) for r in rows],
         "scan": _scan_meta(scan),
         "overall_outcome": outcome,
+        "unit_id": unit.id,
+        "unit_code": unit.unit_code,
+        "decision": scan["decision"],
+        "reasons": scan["reasons"],
+        "heatmap_data_url": heatmap_data_url(scan.get("heatmap_jpeg")),
     }
 
 
@@ -281,7 +305,10 @@ def _save_training_sample(det: DefectDetection, label: str, verdict: str) -> Opt
 # ---------------------------------------------------------------- inspections
 @router.get("/status")
 def get_detector_status():
-    return defect_detector.status()
+    status = engine.status()
+    legacy = defect_detector.status()
+    return {**legacy, "model_loaded": status["segmentation"]["loaded"], "model_error": status["segmentation"]["error"],
+            "model_classes": status["segmentation"]["classes"], "engine": status}
 
 
 @router.post("/inspections", response_model=DefectInspectionDetailResponse)
@@ -426,7 +453,7 @@ def analyze_camera_capture(
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 92])
     file_path = storage_service.save_bytes(buf.tobytes(), id, f"cam_{surface_type.lower()}.jpg")
     return _analyze_and_store(
-        db, insp, file_path, f"live_cam_{surface_type.lower()}.jpg", surface_type, current_user.id, "DEFECT_CAMERA_SCAN"
+        db, insp, file_path, f"live_cam_{surface_type.lower()}.jpg", surface_type, current_user.id, "DEFECT_CAMERA_SCAN", "CAMERA"
     )
 
 
@@ -438,6 +465,7 @@ def _process_video(db: Session, insp: Inspection, video_path: str, video_name: s
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
     step = max(1, int(round(src_fps / max(0.1, sample_fps))))
     ref = cv2.imread(_reference_path(insp)) if _reference_path(insp) else None
+    product = _product_for(db, insp)
 
     sampled, with_defects, keyframes = 0, 0, 0
     latencies: List[float] = []
@@ -450,7 +478,7 @@ def _process_video(db: Session, insp: Inspection, video_path: str, video_name: s
             break
         if frame_idx % step == 0:
             sampled += 1
-            scan = defect_detector.detect(frame, ref, max_side=960)
+            scan = run_inspection(db, frame, product, ref, want_heatmap=False)
             latencies.append(scan["latency_ms"])
             if scan["detections"]:
                 with_defects += 1
@@ -473,7 +501,9 @@ def _process_video(db: Session, insp: Inspection, video_path: str, video_name: s
                     db.add(image)
                     db.commit()
                     db.refresh(image)
-                    _store_detections(db, insp, image, scan["detections"], frame_index=frame_idx, frame_ts=round(ts, 1))
+                    unit = record_unit(db, scan, frame, source="VIDEO", inspection_id=insp.id, image_id=image.id, image_path=frame_path)
+                    for row in unit.detection_rows:
+                        row.frame_index, row.frame_timestamp_ms = frame_idx, round(ts, 1)
                     db.commit()
                     keyframes += 1
         frame_idx += 1
@@ -491,6 +521,8 @@ def _process_video(db: Session, insp: Inspection, video_path: str, video_name: s
         "avg_latency_ms": avg_latency,
         "processing_fps": round(sampled / elapsed, 2) if elapsed > 0 else None,
         "detections_by_type": type_counts,
+        "mode": "SAMPLED_REVIEW",
+        "note": "Sampled frames of a recording. For continuous per-unit inspection use Live Inspection.",
     }
     _audit(db, insp.id, user_id, "DEFECT_VIDEO_SCAN",
            f"Video '{video_name}': {sampled} frames sampled, {with_defects} with defects, avg {avg_latency} ms/frame",
@@ -529,7 +561,7 @@ async def analyze_video(
 ):
     insp = _get_defect_inspection(db, id)
     max_frames = max(1, min(int(max_frames), 120))
-    video_path = await storage_service.save_upload(file, id)
+    video_path = await storage_service.save_upload(file, id, kind="video")
     try:
         return await run_in_threadpool(
             _process_video, db, insp, video_path, file.filename or "video.mp4", sample_fps, max_frames, current_user.id
@@ -667,8 +699,10 @@ def analyze_live_frame(req: DefectFrameRequest, db: Session = Depends(get_db)):
         insp = db.query(Inspection).filter(Inspection.id == req.inspection_id).first()
         ref_path = _reference_path(insp) if insp else None
         ref = cv2.imread(ref_path) if ref_path else None
-    scan = defect_detector.detect(img, ref, max_side=req.max_side)
-    return {**_scan_meta(scan), "detections": scan["detections"]}
+    scan = engine.inspect(img, reference=ref, want_heatmap=False)
+    if scan["streams"] == ["OPENCV"]:
+        scan = {**scan, "outcome": compute_outcome(scan["detections"], quality_issue=not scan["exposure_ok"])}
+    return {**_scan_meta(scan), "outcome": compute_outcome(scan["detections"], quality_issue=not scan["exposure_ok"]), "detections": scan["detections"]}
 
 
 # ---------------------------------------------------------------- analytics & log
@@ -795,6 +829,8 @@ def seed_defect_demo_data(db: Session) -> Dict[str, Any]:
 
 @router.post("/demo/seed")
 def seed_defect_demo(db: Session = Depends(get_db)):
+    if not settings.DEMO_MODE:
+        raise HTTPException(status_code=403, detail="Demo seeding is only available with DEMO_MODE=true")
     return seed_defect_demo_data(db)
 
 

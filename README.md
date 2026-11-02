@@ -1,379 +1,268 @@
-# AI-Powered Legal Metrology Compliance & Inspection Platform (SIH26034)
+# ParakhMaan: Industrial AI Visual Inspection
 
-[![Legal Metrology Rules 2011](https://img.shields.io/badge/Statutory_Standard-LMR_2011_Amendments_2026-blue.svg)](https://consumeraffairs.nic.in)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI_0.115+-green.svg)](https://fastapi.tiangolo.com)
-[![Next.js 16](https://img.shields.io/badge/Frontend-Next.js_16_(App_Router)-black.svg)](https://nextjs.org)
-[![PyTest](https://img.shields.io/badge/Tests-17_Passing-success.svg)](backend/tests)
-[![License](https://img.shields.io/badge/License-Government_Open_Standard-orange.svg)](#)
+AI and computer-vision inspection of products and surfaces on a production line. It detects scratches, cracks, dents, discolouration and dimensional anomalies, plus defects it was never trained on. It measures parts in millimetres and decides accept, reject or manual review per unit. Every result is logged with batch, machine, line, shift and model version, and analytics trace defects back to where they come from.
 
-An enterprise-grade, dual-engine inspection system engineered for the **Smart India Hackathon 2026** problem statement **SIH26034**: *"AI-Powered Legal Metrology Compliance & Inspection Platform"*.
+It is built on the ParakhMaan Legal Metrology platform (SIH26034). That rule-based engine is preserved unchanged as an optional module; see [docs/LEGAL_METROLOGY_MODULE.md](docs/LEGAL_METROLOGY_MODULE.md).
 
-Designed for Legal Metrology Officers, State Enforcement Squads, and E-Commerce Compliance Auditors to inspect packaged commodities across 1–4 surfaces, evaluate image clarity, extract declarations via vision & local LLMs, and validate them against the **Legal Metrology (Packaged Commodities) Rules, 2011** (incorporating all Gazette notifications up to 2026).
+> **Status.** 101 backend tests pass. All 18 end-to-end workflows of the brief pass against a running server with real images (`backend/storage/reports/e2e_workflows.json`). The model numbers below are measured on held-out MVTec AD images. Physical hardware (diverter, PLC, edge board, industrial camera) has **not** been tested; see [Known limitations](#known-limitations).
 
----
+## Problem statement
 
-## 🏛️ Core Principles & Dual-Engine Architecture
+Hackathon PS-12, *AI & Computer-Vision Based Surface & Product Defect Inspection*. The full official text, interpretation and a 35-row requirement matrix are in [01_PROBLEM_STATEMENT_REQUIREMENTS.md](01_PROBLEM_STATEMENT_REQUIREMENTS.md). How each requirement was met and tested is in [docs/REQUIREMENT_TRACEABILITY.md](docs/REQUIREMENT_TRACEABILITY.md).
 
-> **⚖️ The Legal Non-Delegation Principle:** AI/LLM is strictly an assistive perception and extraction tool. AI **NEVER** decides statutory compliance. The deterministic, versioned Rule Engine is the sole and immutable source of truth for legal outcomes.
+## Main features
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                      Package Ingestion (1–4 Surfaces or Live Camera)                    │
-└────────────────────────────────────────┬────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                 OpenCV Image Quality Gate & Blank Image Detector                        │
-│   • Laplacian Sharpness Variance (Blur threshold > 40.0)                                │
-│   • Specular Glare & Overexposure Ratio (< 15%)                                         │
-│   • Resolution & Pixel Density Check                                                    │
-│   • Unprinted / Plain Foil Detection (std_dev < 6.0 → Confidence 0.0, REVIEW state)    │
-└────────────────────────────────────────┬────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│              Dual-Path Vision & Semantic Extraction Service                             │
-│   • Path A: High-Precision OCR & Deterministic Regex Parser                             │
-│   • Path B: Local LLM Engine (Ollama / Qwen2.5:7b) + Legal Metrology RAG Search         │
-│   • Structured Declarations: MRP, Net Qty, Dates, Mfg/Packer, Country of Origin, USP   │
-└────────────────────────────────────────┬────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│          DETERMINISTIC STATUTORY RULE ENGINE (40+ Statutory Rules)                      │
-│   • General Declarations: PC-DEC-001 through PC-DEC-010                                 │
-│   • Unit Standardization: PC-UNIT-001 (g, kg, ml, l, m, cm, No.)                       │
-│   • Cross-Surface Contradiction: PC-CON-001 (e.g. Front 500g vs Back 450g)              │
-│   • Schedule Compliance: PC-SCHED-001 (Second Schedule Standard Pack Sizes)             │
-│   • Principal Display Panel: PC-FONT-001 (Rule 7 Area & Min Font Height)                │
-│   • Special Commodities: PC-EX-001 (Pan Masala RSP), PC-EX-002, PC-ECOM-001             │
-└────────────────────────────────────────┬────────────────────────────────────────────────┘
-                                         │
-                                         ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────┐
-│                             Statutory Compliance Matrix                                 │
-│   🟢 COMPLIANT (Pass)   │   🟡 NEEDS MANUAL REVIEW   │   🔴 POSSIBLE NON-COMPLIANCE     │
-└────────────────────────────────────────┬────────────────────────────────────────────────┘
-                                         │
-             ┌───────────────────────────┴───────────────────────────┐
-             ▼                                                       ▼
-┌─────────────────────────────────────────┐ ┌─────────────────────────────────────────────┐
-│  Inspector Interactive Evidence Viewer  │ │ Inspector Statutory Tools Hub (/rules)      │
-│  • High-resolution Canvas Box Overlay   │ │ • 1st Schedule MPE Tolerances               │
-│  • Field-by-Field Visual Linkage        │ │ • 5th Schedule Lot Sampling (t-corrected)   │
-│  • Manual Correction / Override Trail   │ │ • 2nd Schedule Commodity Standard Sizes     │
-│  • Official Legal Metrology PDF Export  │ │ • Rule 7 PDP Area & Font Height Calculator  │
-└─────────────────────────────────────────┘ └─────────────────────────────────────────────┘
-```
+| Area | What it does |
+|---|---|
+| Defect detection | YOLO11n-seg for the 5 named classes, with pixel masks |
+| Unseen defects | Per-product PatchCore-style anomaly model with a heatmap. Defects it cannot name become UNKNOWN_ANOMALY |
+| Classical CV | The original OpenCV surface detector and golden-reference comparison. They count only when the anomaly model agrees |
+| Dimensional | Checkerboard or reference-length calibration, mm measurements, tolerance check, contour deviation |
+| Live line | Browser camera, USB/RTSP camera, video file or simulated conveyor; one ID per part, inspected once at a trigger line |
+| Line decision | ACCEPT / REJECT / MANUAL_REVIEW from a per-product policy. Latency budget from belt speed. Reject signal through simulated, serial or webhook actuators |
+| Logging | Every unit and detection, with batch, machine, line, shift, model version and latency |
+| Analytics | KPIs, Pareto, p-chart trend with spike alerts, breakdowns by machine/shift/batch/line. Root-cause association (Fisher exact test, BH-corrected), labelled as correlation |
+| Continuous learning | Reviewer labels and samples, fixed holdout, dataset versions, retraining, gate, promotion, rollback |
+| Reports | PDF per inspection and per batch |
+| Security | bcrypt, JWT, roles (INSPECTOR / SUPERVISOR / ADMIN), no default secrets, upload type and size limits, stored images and PDFs only through an authenticated route |
+| Rule-Based Engine | Legal Metrology module, unchanged (`rules.json` byte-identical to the original) |
 
----
+The frontend has 16 sections: Overview, Live Inspection, Defect Detection, Dimensional Inspection, Golden References, Line Monitoring, Products & Batches, Inspection History, Defect Analytics, Root-Cause Investigation, Reports, Model Performance, Dataset & Feedback, Model Versions, Settings and Rule-Based Engine.
 
-## ✨ Key Features & Capabilities
-
-### 1. Multi-Surface & Live Camera Acquisition
-- Ingest up to 4 surface photos (`FRONT`, `BACK`, `SIDE`, `TOP`, `BOTTOM`).
-- **Live Camera Integration**: Direct WebRTC stream for mobile phones (rear-camera auto-facing) and PC webcams with real-time frame capture.
-
-### 2. OpenCV Image Quality & Blank Detector
-- Analyzes Laplacian variance, specular glare percentage, and minimum readable resolution.
-- **True Zero-Confidence on Unprinted / Empty Surfaces**: Plain silver foil pouches or blank unprinted photos yield **`0.0%` confidence** and route to `NEEDS MANUAL REVIEW` with `UNVERIFIED_PACKAGE` / `NO_TEXT_DETECTED`, preventing false positive compliance claims.
-
-### 3. Dual-Engine Extraction (OCR + Local LLM RAG)
-- **Deterministic Regex Parser**: Instant, air-gapped parsing of standard statutory formats (`₹`, `Rs.`, `Mfd on:`, `Net Wt:`, `PKD:`, `Consumer Care:`, `Country of Origin`).
-- **Local Ollama Integration**: Powered by `qwen2.5:7b` for complex multiline packaging text, bilingual labels, and non-standard layout disambiguation.
-- **Statutory RAG Engine**: Semantic search across the Gazette Notifications, Rules PDF, and official Legal Metrology FAQs.
-
-### 4. 40+ Statutory Rules Implementation
-- Enforces all key provisions of the **Legal Metrology (Packaged Commodities) Rules, 2011**:
-  - **Rule 6(1)(a)**: Common generic product name.
-  - **Rule 6(1)(b)**: Complete manufacturer / packer name and physical address with pin code.
-  - **Rule 6(1)(c)**: Country of origin for imported goods (Rule 6(10) / G.S.R. 881(E)).
-  - **Rule 6(1)(d)**: Net quantity in standard SI units (Rule 11/12).
-  - **Rule 6(1)(e)**: Month and year of manufacture/pre-packing/import.
-  - **Rule 6(1)(f)**: MRP in Indian Rupees inclusive of all taxes (`₹` or `Rs.`, Rule 6(1)(da)).
-  - **Rule 6(1)(g)**: Consumer care details (name/designation, address, telephone, and email).
-  - **Rule 6(1)(ea)**: Unit Sale Price (USP) mandatory declaration (e.g. `₹ 0.50 / g`).
-  - **Rule 7**: Principal Display Panel (PDP) minimum letter/numeral height check against 5 area bands.
-  - **Rule 5 & Second Schedule**: Verification against prescribed pack sizes (Biscuits, Tea, Coffee, Edible Oils, Sugar, Cement, etc.).
-  - **Fifth Schedule**: Batch/lot sampling verification with allowable $T_1$ limits, zero $T_2$ tolerances, and Student's t-corrected sample mean.
-
-### 5. Multi-Surface Contradiction Detection
-- Flags discrepancies across surfaces (e.g., front declares `500 g` while back declares `450 g`) with rule `PC-CON-001`.
-
-### 6. Interactive Inspector Tools Suite (`/rules`)
-- **Statutory Rules Catalog**: Searchable and filterable database of 40+ rules with legal text, penalties, and amendment references.
-- **First Schedule MPE Calculator**: Instant Maximum Permissible Error tolerance calculation for mass/volume.
-- **Fifth Schedule Lot Sampling Evaluator**: Statistical acceptance testing for lot sizes ($n=32, 80, 125$) with Student's t-correction ($\bar{x}_{\text{corr}} = \bar{x} + \frac{2s}{\sqrt{n}}$).
-- **Second Schedule Standard Pack Sizes**: Permitted weight/volume validator for 12+ notified commodity classes.
-- **Rule 7 PDP Calculator**: Principal Display Panel surface calculation and statutory minimum font height determination.
-
-### 7. Official Legal Metrology Inspection Certificate
-- Export complete inspection reports to digitally-styled, printable PDF format containing Government of India / Department of Consumer Affairs header, compliance matrix, bounding box evidence, inspector remarks, and digital verification seal.
-
----
-
-## 🔍 Defect Inspection Mode (AI & Computer-Vision Surface / Product Defects)
-
-A **separate mode** alongside Legal Metrology (switch with the *Legal Metrology / Defect Inspection* toggle in the navbar). It reuses the platform's inspection, image, audit-trail and PDF infrastructure but has its own pipeline, pages, numbering (`DEF-YYYY-NNNN`) and statistics — legal inspections, dashboard and rule engine are unaffected.
+## Architecture
 
 ```
-Image / Live camera / Video ──► Hybrid defect detector ──► Classify + grade severity ──► Log (DB + audit)
-                                                                                      │
-             Inspector feedback (confirm / reject / relabel) ──► labelled training samples
-                                                                                      ▼
-                                        Analytics: frequency, trend, hotspots, per-product, root-cause hints
+ camera / video / upload / simulated conveyor
+            │
+            ▼
+   bounded frame queue ─▶ unit tracker (one ID per part, best frame, trigger line)
+            │
+            ▼
+   InspectionEngine (ONNX Runtime, CPU)
+     ├─ YOLO11n-seg ─────────────▶ class + mask
+     ├─ ResNet-18 memory bank ───▶ anomaly map ─▶ UNKNOWN_ANOMALY regions
+     ├─ OpenCV + golden (corroborated by the anomaly map)
+     └─ metrology (calibrated mm, tolerances)
+            │
+            ▼
+   DecisionPolicy ─▶ ACCEPT / REJECT / MANUAL_REVIEW ─▶ actuator (simulated / serial / webhook)
+            │
+            ▼
+   SQLite: production_units, defect_detections, reject_events, batches, machines, ...
+            │
+            ├─▶ analytics (Pareto, p-chart, association) ─▶ alerts, corrective actions
+            └─▶ review queue ─▶ dataset versions ─▶ retrain ─▶ gate ─▶ promote / rollback
 ```
 
-| Defect | Classical OpenCV method (no training data needed) |
-| :--- | :--- |
-| Scratch | Black-hat / top-hat line extraction + oriented line filter; straight strokes |
-| Crack | Same line extraction; tortuous / branching dark strokes |
-| Dent | Local shading anomaly against a masked large-scale illumination model |
-| Discolouration | CIELAB chroma shift vs surface median (or full ΔE vs golden sample) |
-| Dimensional anomaly | Product contour vs golden sample (aspect, area, shape) or edge notches via convexity defects |
+| Layer | Path |
+|---|---|
+| API (FastAPI) | `backend/app/api/` (`defects`, `production`, `metrology_api`, `analytics_api`, `live`, `learning`, `edge`, plus legacy `inspections`, `rules`, ...) |
+| Inference | `backend/app/services/inference/` (`engine.py`, `anomaly_engine.py`, `seg_detector.py`) |
+| Metrology | `backend/app/services/metrology/` |
+| Line and real time | `backend/app/services/line/`, `backend/app/services/realtime/` |
+| Analytics | `backend/app/services/analytics/` |
+| Learning | `backend/app/services/learning/` |
+| Training and evaluation | `ml/` (needs PyTorch; not part of the runtime image) |
+| Frontend (Next.js 16, React 19, Tailwind 4) | `frontend/src/app/` |
+| Reject controller sketch (untested) | `firmware/reject_controller/` |
 
-- **Golden reference (optional):** a defect-free sample of the same product. It is aligned (ORB + homography) and used to suppress printed designs/logos, match colour exactly and compare dimensions. **Upload one for printed or branded products**, otherwise artwork can be reported as defects.
-- **Deep-learning plug-in:** set `DEFECT_MODEL_PATH` to a YOLOv8 ONNX export (e.g. trained on NEU-DET / GC10-DET / MVTec AD). It runs through OpenCV DNN — no PyTorch or onnxruntime needed. Class names come from `DEFECT_MODEL_CLASSES` (comma separated) or a sidecar `<model>.names` file and are mapped onto the taxonomy above. `DEFECT_DETECTOR_BACKEND=hybrid` (default) merges model + OpenCV detections; `opencv` / `onnx` force one engine.
-- **Real-time / edge:** live camera mode streams downscaled frames (≈100–150 ms per frame on a laptop CPU) with on-screen boxes, FPS and latency; videos are sampled (`sample_fps`, `max_frames`) and frames with defects are kept as evidence.
-- **Retraining loop:** every confirm / relabel / reject saves a crop to `storage/defect_samples/<TYPE>/` (`_false_positive/` for rejects) and a line in `manifest.jsonl`.
-- **Outcome:** `DEFECTIVE` if any confident high/critical defect, `REVIEW` for medium defects or under/over-exposed frames, otherwise `PASS`. Rejected detections are ignored.
+## Technology stack
 
-Pages: `/defects` (new inspection + recent list), `/defects/[id]` (overlay, defect log, feedback, PDF), `/defects/analytics` (KPIs, trend, hotspots, product breakdown, root-cause hints, searchable log).
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2, SQLite, ONNX Runtime 1.31, OpenCV 4.14, NumPy, SciPy, ReportLab, bcrypt, PyJWT.
+- **ML (training only):** PyTorch 2.15 (MPS), Ultralytics 8.4, scikit-learn.
+- **Frontend:** Next.js 16.3, React 19, Tailwind CSS 4, TypeScript.
+- **Deployment:** Docker, Docker Compose.
 
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/defects/inspections` | Create a defect inspection |
-| `GET` | `/api/v1/defects/inspections` / `/{id}` | List / detail (detections, images, root-cause hints) |
-| `POST` | `/api/v1/defects/inspections/{id}/reference` | Upload golden (defect-free) sample |
-| `POST` | `/api/v1/defects/inspections/{id}/analyze` | Analyse an uploaded image |
-| `POST` | `/api/v1/defects/inspections/{id}/capture` | Analyse a base64 camera snapshot |
-| `POST` | `/api/v1/defects/inspections/{id}/video` | Sample and analyse a video |
-| `POST` | `/api/v1/defects/analyze-frame` | Stateless live-frame detection (camera loop) |
-| `POST` | `/api/v1/defects/detections/{id}/feedback` | `CONFIRM` / `REJECT` / `RELABEL` a detection |
-| `GET` | `/api/v1/defects/inspections/{id}/overlay/{image_id}` | Annotated image (data URL) |
-| `GET` | `/api/v1/defects/inspections/{id}/report` | Defect inspection PDF |
-| `POST` | `/api/v1/defects/inspections/{id}/finalize` | Sign off (optional outcome override) |
-| `GET` | `/api/v1/defects/analytics?days=30&product=` | Frequency, severity, trend, hotspots, products, root causes |
-| `GET` | `/api/v1/defects/log` | Filterable detection log |
-| `GET` | `/api/v1/defects/status` | Detector engine / model status |
-| `POST` | `/api/v1/defects/demo/seed` | Seed synthetic defect samples |
+## Models
 
----
+Full details, per-product tables and how to reproduce them: [docs/MODELS.md](docs/MODELS.md).
 
-## 🛠️ Technology Stack
+### Anomaly detector, ResNet-18 (all 15 MVTec products)
 
-```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                                   FULL TECH STACK                                      │
-├───────────────────┬───────────────────┬─────────────────────────┬──────────────────────┤
-│  Frontend Layer   │   Backend Layer   │    Vision & AI Layer    │  DevOps & Testing    │
-│  (Next.js 16/TS)  │  (FastAPI/Py3.13) │ (OpenCV / Ollama / RAG) │  (Docker / PyTest)   │
-└───────────────────┴───────────────────┴─────────────────────────┴──────────────────────┘
-```
+| Metric | Result |
+|---|---|
+| Mean image AUROC | 0.979 |
+| Mean pixel AUROC | 0.977 |
+| Recall on defect kinds no model was trained on | 0.918 (342 images) |
+| False-reject rate | 0.094 |
+| Latency p50 | 17 ms |
 
-| Layer / Domain | Technology | Purpose / Application |
-| :--- | :--- | :--- |
-| **Frontend Framework** | [Next.js 16](https://nextjs.org/) (App Router) | Modern React framework with server-side rendering, routing, and asset optimization |
-| **UI Library & Language** | [React 19](https://react.dev/) + [TypeScript 5](https://www.typescriptlang.org/) | Declarative component hierarchy with strict end-to-end type safety |
-| **Styling & Design System** | [Tailwind CSS 3](https://tailwindcss.com/) | Custom Notion-inspired, high-density government inspector design system |
-| **Icons & Visuals** | [Lucide React](https://lucide.dev/) | Clean, accessible vector icons for compliance badges, status chips, and tools |
-| **Device Hardware Access** | [WebRTC MediaDevices API](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices) | Native in-browser live camera capture (rear-facing mobile and PC webcam support) |
-| **Backend REST API** | [FastAPI 0.115+](https://fastapi.tiangolo.com/) | High-performance asynchronous Python API framework with automatic OpenAPI docs |
-| **Runtime Language** | [Python 3.13+](https://www.python.org/) | Latest Python release with performance improvements and native typing |
-| **Data Validation & Schemas** | [Pydantic v2](https://docs.pydantic.dev/) | High-speed data parsing, strict statutory model validation, and schema definitions |
-| **Database & ORM** | [SQLAlchemy 2.0](https://www.sqlalchemy.org/) + [SQLite](https://www.sqlite.org/) | Relational database abstraction with zero-configuration persistence (PostgreSQL compatible) |
-| **Computer Vision Engine** | [OpenCV](https://opencv.org/) (`opencv-python-headless`) | Laplacian blur variance estimation, specular glare masking, and MSER region proposals |
-| **Numerical Processing** | [NumPy](https://numpy.org/) | High-speed matrix operations, luminance calculations, and statistical sampling math |
-| **Image Manipulation** | [Pillow (PIL)](https://python-pillow.org/) | Multi-surface format decoding, EXIF orientation correction, and thumbnail generation |
-| **Local LLM Runtime** | [Ollama](https://ollama.com/) | Air-gapped, on-premise local model inference (Qwen2.5:7b, LLaVA vision models) |
-| **Statutory RAG Engine** | [Scikit-learn](https://scikit-learn.org/) (TF-IDF + Cosine) | Vector semantic retrieval across Gazette amendments, PCR 2011 PDF, and official FAQs |
-| **Asynchronous HTTP Client** | [HTTPX](https://www.python-httpx.org/) | Non-blocking async client for LLM communication with automatic offline fallbacks |
-| **PDF Dossier Generation** | [ReportLab](https://www.reportlab.com/) | Programmatic generation of official Government of India inspection certificates |
-| **Automated Testing** | [PyTest](https://pytest.org/) + [AnyIO](https://anyio.readthedocs.io/) | Async unit testing suite with 19 comprehensive test cases |
-| **Containerization** | [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/) | Multi-stage containerized deployments for backend, frontend, and local LLM runtime |
+### Defect-shape model, YOLO11n-seg (398 test images)
 
----
+| Metric | Result |
+|---|---|
+| Box mAP@50 | 0.606 |
+| Mask mAP@50 | 0.585 |
+| Defective images caught (image-level recall) | 0.848 |
+| Image-level precision | 0.993 |
+| Good images wrongly flagged | 0.4% |
 
-## 🚀 Quick Start Guide
+Per-class F1: scratch 0.77, discolouration 0.68, crack 0.62, dent 0.53, dimensional anomaly 0.43.
 
-### Prerequisites
-- **Python**: 3.11+ (Tested on Python 3.13)
-- **Node.js**: 18.x or 20.x (Tested with npm 10+)
-- **Optional (for Local LLM)**: Docker & Docker Compose or [Ollama](https://ollama.com)
+### Decisions on 740 held-out images (234 good, 506 defective)
 
----
+| Outcome | Result |
+|---|---|
+| Good parts automatically rejected | 0 |
+| Good parts sent to manual review | 9.4% |
+| Defective parts caught (rejected or sent to review) | 88.9% |
+| Defective parts accepted (escapes) | 11.1% |
 
-### Option 1: Running Locally (Fastest)
+### Speed
 
-#### 1. Start the Backend (FastAPI on Port 8080)
+| Measured on | Full pipeline p50 | Throughput |
+|---|---|---|
+| Apple M1 Pro, CPU | 70 ms | 14 FPS |
+| Linux Docker container on the same Mac | 365 ms | — |
+
+## Dataset
+
+MVTec AD: 15 categories and 5,354 images, licensed CC BY-NC-SA 4.0, so it is non-commercial. It is downloaded by script and **not committed**. The split has no overlap between sets, is grouped by defect kind, and keeps a withheld set of defect kinds the supervised model never sees. See [docs/DATASETS.md](docs/DATASETS.md).
+
+## Installation
+
+Requirements:
+- Python 3.12;
+- Node 22;
+- about 6 GB of free disk space for the dataset, needed only if you retrain.
+
+### Backend
+
 ```bash
-# Navigate to backend directory
 cd backend
-
-# Create and activate virtual environment (optional but recommended)
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run unit tests to verify system integrity
-python -m pytest tests
-
-# Start FastAPI application
-python -m uvicorn app.main:app --port 8080 --host 0.0.0.0 --reload
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt          # or: --require-hashes -r requirements.lock
+cp .env.example .env                                # then set SECRET_KEY (see below)
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
-- **API Swagger Docs**: [http://localhost:8080/docs](http://localhost:8080/docs)
-- **API Health Check**: [http://localhost:8080/api/health](http://localhost:8080/api/health)
 
-#### 2. Start the Frontend (Next.js on Port 3000)
+`.env` settings:
+
+| Variable | Meaning |
+|---|---|
+| `SECRET_KEY` | **Required** when `ENVIRONMENT=production`; the server refuses to start without it |
+| `DEMO_MODE` / `DEMO_PASSWORD` | `true` plus a password creates `inspector@gov.in`, `supervisor@gov.in` and `admin@gov.in` with that password. Off by default |
+| `AUTH_REQUIRED` | `true` by default |
+| `BACKEND_CORS_ORIGINS` | Comma-separated list. Default `http://localhost:3000` |
+| `SEG_MODEL_PATH` | YOLO-seg ONNX model. Default `storage/models/segmentation/production.onnx` |
+| `ANOMALY_BACKBONE_PATH` | Anomaly backbone ONNX model. Default `storage/models/anomaly/backbone.onnx` |
+| `ANOMALY_PRODUCTS_DIR` | Per-product anomaly models. Default `storage/models/anomaly/products` |
+| `MAX_UPLOAD_MB` / `MAX_VIDEO_MB` | Upload limits. Default 25 / 300 |
+
+**Model files.** The trained ONNX models are under `backend/storage/models/`:
+- `segmentation/production.onnx`, 11.7 MB;
+- `anomaly/backbone.onnx`, 10.6 MB;
+- `anomaly/products/*`, 35 MB.
+
+Because they are trained on MVTec AD they carry its non-commercial licence. If they are absent, regenerate them with the commands in [docs/MODELS.md](docs/MODELS.md#7-reproduce). The server also runs without them, falling back to the classical detector, and `/api/health` reports which models are loaded.
+
+### Running the backend
+
 ```bash
-# Open a new terminal and navigate to frontend directory
+cd backend
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+# health:  http://localhost:8080/api/health
+# API docs (OpenAPI / Swagger): http://localhost:8080/docs
+```
+
+### Running the frontend
+
+```bash
 cd frontend
-
-# Install Node dependencies
-npm install
-
-# Start Next.js development server
-npm run dev
+npm ci
+NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1 npm run build
+npm run start            # http://localhost:3000, or `npm run dev` while developing
 ```
-- **Web Platform**: [http://localhost:3000](http://localhost:3000)
-- **Rules & Inspector Tools**: [http://localhost:3000/rules](http://localhost:3000/rules)
-- **Dashboard**: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
 
----
-
-### Option 2: Docker Compose (Full Stack with Local LLM)
+## Docker deployment
 
 ```bash
-# Start Backend, Frontend, and Ollama Local LLM container
-docker-compose up -d --build
-
-# Pull the Qwen2.5 7B model inside the Ollama container
-docker exec -it lm-ollama ollama pull qwen2.5:7b
+cp .env.example .env      # set SECRET_KEY; optionally DEMO_MODE=true and DEMO_PASSWORD
+docker compose up --build
+# frontend http://localhost:3000   backend http://localhost:8080/api/health
 ```
 
-Access points:
-- Frontend: [http://localhost:3000](http://localhost:3000)
-- Backend API: [http://localhost:8080](http://localhost:8080)
-- Ollama LLM Service: [http://localhost:11434](http://localhost:11434)
+**Container setup:**
+- The backend image is Python 3.12-slim with ONNX Runtime and no PyTorch. It runs as a non-root user and installs from `requirements.lock` with `--require-hashes`.
+- Models and reports are mounted from `backend/storage/`; the database lives in a named volume.
+- On a slow network, add `--build-arg PIP_INDEX_URL=<mirror>`. The hashes still pin the exact official files.
 
----
+**Verified:** the compose stack builds and passes its health check. It also handles login, a real image upload, a PDF report and the CORS restriction. Inference was also run in the container with networking disabled (`--network none`).
 
-## 🧪 Automated Testing Suite
+## API documentation
 
-The repository includes a comprehensive `pytest` test suite with 17 test cases validating all aspects of image processing, parsing, rule engine logic, statutory schedules, and API endpoints.
+Interactive OpenAPI docs are at `/docs`. The main groups:
+
+| Prefix | Purpose |
+|---|---|
+| `/api/v1/auth` | Login, current user, register (ADMIN only) |
+| `/api/v1/defects` | Inspections, image/frame/video analysis, golden reference per inspection, feedback, PDF report |
+| `/api/v1/production` | Products, golden references, lines, machines, batches (+ PDF), units, final decisions |
+| `/api/v1/metrology` | Calibrations (checkerboard / reference length), dimensional inspection |
+| `/api/v1/live` | Live sessions (BROWSER / CAMERA / RTSP / VIDEO_FILE / CONVEYOR_SIM) and the WebSocket frame stream |
+| `/api/v1/analytics` | Overview, root cause, alerts, corrective actions |
+| `/api/v1/learning` | Review queue, samples, dataset versions, training jobs, models, promote, rollback |
+| `/api/v1/edge` | Runtime status, benchmark, stored evaluation reports, latency budget |
+| `/api/v1/inspections`, `/api/v1/rules`, ... | Legal Metrology module (unchanged) |
+
+All routes except `/api/health` and `/api/v1/auth/login` need a bearer token. Promotion, rollback, product and line setup need SUPERVISOR or ADMIN.
+
+## Testing
 
 ```bash
-cd backend
-python -m pytest tests -v
+cd backend && .venv/bin/python -m pytest tests -q                     # 101 passed
+cd frontend && npm run build                                           # 27 routes
+# against a running backend started with DEMO_MODE=true:
+cd backend && DEMO_PASSWORD=... .venv/bin/python -m scripts.e2e_workflows --manifest ../datasets/prepared/manifest.json
 ```
 
-### Test Coverage Highlights:
-- `test_image_quality.py`: Sharpness detection, blur rejection, specular glare evaluation, plain foil / blank pouch 0.0 confidence classification.
-- `test_declaration_service.py`: Standard declaration regex extraction (MRP, Net Qty, Dates, Mfg details, USP, Country of Origin).
-- `test_rule_engine.py`: 40+ statutory rules determinism, mandatory missing declaration flags, non-standard unit rejection, contradiction detection, and unprinted package behavior.
-- `test_rag_and_llm.py`: Second Schedule standard pack sizes, First Schedule MPE error calculations, Fifth Schedule lot sampling evaluation, Rule 7 PDP font calculations, RAG vector retrieval, and Ollama fallback mechanisms.
-- `test_api.py`: FastAPI endpoints, demo seeding, inspection creation, and review workflows.
+The original project scored 40 passed, 3 failed. The 3 failures came from a `cv2.setLogLevel` bug, which is now fixed.
 
----
+## Demonstration workflow
 
-## 📖 API Endpoints Reference
+1. Start the backend with `DEMO_MODE=true DEMO_PASSWORD=<pw>` and start the frontend. Log in as `supervisor@gov.in`.
+2. **Fill the dashboards (simulated):**
+   ```bash
+   cd backend && .venv/bin/python -m scripts.simulate_production --reset --product metal_nut --samples storage/demo_samples/metal_nut --units 300
+   ```
+   This runs real held-out images through real inference. Machine M-02 receives extra defective parts, and every row is marked SIMULATED.
+3. **Overview / Defect Analytics:** KPIs, Pareto, control chart, open alert for M-02.
+4. **Root-Cause Investigation:** M-02 is the only significant factor (odds ratio ≈ 8). Record a corrective action.
+5. **Defect Detection:** upload `storage/demo_samples/metal_nut/defect/*.png` to see masks, the anomaly heatmap, the decision and a PDF report.
+6. **Live Inspection:** choose *Simulated conveyor* (`demo_samples/metal_nut`) or *Browser camera*. Parts get IDs, decisions and simulated reject events.
+7. **Dimensional Inspection:** create a calibration and inspect an image of a part on a plain background.
+8. **Dataset & Feedback → Model Versions:** label units, train a candidate, see the gate checks, then promote or roll back.
+9. **Model Performance:** every evaluation number above, read from the stored reports.
+10. **Rule-Based Engine:** the original Legal Metrology flow.
 
-### Core Inspection & Compliance
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `POST` | `/api/v1/inspections` | Upload package images (1–4 surfaces) and execute full compliance audit |
-| `GET` | `/api/v1/inspections` | List inspection registry with pagination, search, and status filters |
-| `GET` | `/api/v1/inspections/{id}` | Retrieve comprehensive inspection dossier, compliance matrix & evidence |
-| `POST` | `/api/v1/reviews/{id}` | Submit inspector review (`CONFIRM`, `CORRECT`, `REJECT`, `REQUEST_IMAGE`) |
-| `GET` | `/api/v1/reports/{id}/pdf` | Generate & download official Legal Metrology PDF inspection certificate |
-| `POST` | `/api/v1/demo/seed` | Seed pre-configured statutory benchmark test cases |
+`storage/demo_samples/` is built from the MVTec test split (git-ignored); recreate it with `python3 ml/datasets/make_demo_samples.py` from the project root.
 
-### Statutory Inspector Tools
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/api/v1/tools/rules-database` | Query statutory rules catalog with filters (category, rule ID, mandatory) |
-| `POST` | `/api/v1/tools/mpe-calculate` | Calculate First Schedule Maximum Permissible Error (MPE) for given net qty |
-| `POST` | `/api/v1/tools/lot-sample-evaluate` | Evaluate Fifth Schedule lot sampling ($n=32, 80, 125$) with Student's t-test |
-| `POST` | `/api/v1/tools/pdp-font-check` | Rule 7 Principal Display Panel area & minimum font/numeral height calculator |
-| `GET` | `/api/v1/tools/schedules` | Query Second Schedule notified commodity pack sizes |
+## Known limitations
 
----
+- **No physical line was tested.**
+  - The actuator is simulated.
+  - The serial and webhook actuators are tested only against fakes.
+  - `firmware/` has not been compiled or flashed.
+  - Belt-speed timing is calculated, not measured.
+- **Benchmarks cover only this Mac and its Docker VM.** No edge board was tested, and the 5× Docker slowdown was not investigated.
+- **MVTec AD is a studio dataset:** one centred part, controlled lighting. Expect lower accuracy on a real line until the models are retrained on line images through the learning loop.
+- **Weak products:** screw, zipper and grid reject too many good parts. Capsule, pill and transistor miss too many defects. DIMENSIONAL_ANOMALY and DENT are the weakest classes, and test sets are small (6–30 good images per product).
+- **Manual review share:** 64.6% of defective parts go to review rather than automatic rejection, because the default policy does not auto-reject defects the model cannot name.
+- **Dimensional accuracy** is verified only on synthetic images of known geometry. Real parts have not been measured against a gauge.
+- **Golden-reference comparison** adds no measurable benefit on MVTec when learned models exist, and costs about 190 ms per image.
+- **Licences are non-commercial:** the models are MVTec-trained (CC BY-NC-SA) and Ultralytics is AGPL-3.0.
+- **Lint:** 60 errors remain, all in original Legal Metrology frontend files (mostly `no-explicit-any`). The new pages are lint-clean apart from unused-import warnings.
+- **Database:** SQLite with a single backend process. Multi-line deployment would need PostgreSQL and a shared session manager.
 
-## 📂 Repository Structure
+## Project documents
 
-```
-prototype/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                     # FastAPI application entrypoint & middleware
-│   │   ├── core/                       # Config, database setup, JWT auth, security
-│   │   ├── models/                     # SQLAlchemy models (Inspection, Image, Declaration, Rule, Result, Audit)
-│   │   ├── schemas/                    # Pydantic validation models & tool request schemas
-│   │   ├── api/                        # REST API routers (auth, inspections, reviews, reports, dashboard, tools, demo)
-│   │   ├── services/
-│   │   │   ├── image_quality.py        # OpenCV Laplacian blur, glare, and blank image detection
-│   │   │   ├── ocr_service.py          # OCR span localization & bounding box extraction
-│   │   │   ├── declaration_service.py  # Deterministic regex statutory declaration parser
-│   │   │   ├── llm_service.py          # Ollama local LLM integration (qwen2.5:7b)
-│   │   │   ├── rag_service.py          # Legal Metrology RAG vector retrieval service
-│   │   │   ├── rule_engine.py          # 40+ statutory rules engine & contradiction detector
-│   │   │   ├── mpe_calculator.py       # First & Fifth Schedule MPE / sampling statistics
-│   │   │   ├── schedule_checker.py     # Second Schedule prescribed pack size validator
-│   │   │   ├── pdp_calculator.py       # Rule 7 Principal Display Panel font height calculator
-│   │   │   └── pdf_service.py          # Official ReportLab inspection certificate generator
-│   │   └── data/                       # Compiled statutory rules JSON
-│   ├── tests/                          # 17 automated pytest test suites
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── layout.tsx              # Root application layout
-│   │   │   ├── page.tsx                # Landing page & quick workflow actions
-│   │   │   ├── dashboard/page.tsx      # Analytics & KPI dashboard
-│   │   │   ├── inspections/page.tsx    # Inspection registry with status filters
-│   │   │   ├── inspections/new/page.tsx# New inspection creation & live camera capture
-│   │   │   ├── inspections/[id]/page.tsx# Inspection dossier, matrix & evidence viewer
-│   │   │   └── rules/page.tsx          # Statutory Rules Book & Inspector Tools Suite
-│   │   ├── components/                 # Navbar, CameraCaptureModal, EvidenceViewer, ComplianceMatrix, ReviewModal
-│   │   ├── lib/                        # API client & TypeScript interfaces
-│   │   └── styles/                     # Modern design system & Tailwind tokens
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── Dockerfile
-│
-├── SIH26034_RULES.json                 # 40+ statutory legal metrology rules specification
-├── SIH26034_RULES.csv                  # Tabular rules register
-├── SOURCE_REGISTER.csv                 # Official Gazette notifications & legal source register
-├── Book_on_Legal_Metrology...pdf       # Reference statutory handbook
-├── FAQs_on_Packaged_Commodities...pdf   # Official ministry clarifications
-├── data.md                             # Comprehensive statutory domain knowledge & mappings
-├── DESIGN.md                           # Architecture specification & schema design
-├── work.md                             # Hackathon execution milestones & deliverables
-├── docker-compose.yml                  # Multi-container orchestration (Backend + Frontend + Ollama)
-└── README.md                           # Master project documentation
-```
-
----
-
-## 🏛️ Statutory References & Legal Basis
-
-1. **Legal Metrology Act, 2009 (No. 1 of 2010)** — Sections 18, 36 (Penalties for non-standard packages).
-2. **Legal Metrology (Packaged Commodities) Rules, 2011** (G.S.R. 202(E) dated 07-03-2011).
-3. **G.S.R. 881(E) (2025/2026 Amendment)** — Mandatory Unit Sale Price (USP) declaration, e-commerce digital disclosures, and non-standard packaging exemptions.
-4. **G.S.R. 128(E)** — Electronic labeling provisions for specified hardware commodities.
-5. **G.S.R. 312(E) & G.S.R. 418(E)** — Pan Masala mandatory Retail Sale Price (RSP) standardization and Second Schedule commodity updates.
-
----
-
-## 👥 Contributors & Hackathon Team
-
-Developed for the **Smart India Hackathon 2026** (Problem Statement: `SIH26034`).
-
-*Department of Consumer Affairs, Ministry of Consumer Affairs, Food & Public Distribution, Government of India.*
+| File | Content |
+|---|---|
+| [01_PROBLEM_STATEMENT_REQUIREMENTS.md](01_PROBLEM_STATEMENT_REQUIREMENTS.md) | Official text, requirements, acceptance criteria, matrix |
+| [02_PARAKHMAAN_EXISTING_PROJECT_AUDIT.md](02_PARAKHMAAN_EXISTING_PROJECT_AUDIT.md) | Audit of the original code |
+| [03_COMPLETE_IMPLEMENTATION_ROADMAP.md](03_COMPLETE_IMPLEMENTATION_ROADMAP.md) | Phases and status |
+| [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md) | What was built, results, limitations |
+| [docs/REQUIREMENT_TRACEABILITY.md](docs/REQUIREMENT_TRACEABILITY.md) | Requirement → code → test → result |
+| [docs/MODELS.md](docs/MODELS.md), [docs/DATASETS.md](docs/DATASETS.md) | Models, data, licences |
+| [docs/HARDWARE_INTERFACE.md](docs/HARDWARE_INTERFACE.md) | Reject signal, serial protocol, wiring notes |
+| [docs/LEGAL_METROLOGY_MODULE.md](docs/LEGAL_METROLOGY_MODULE.md) | Original README of the preserved module |

@@ -3,7 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { PackageImage, ComplianceResult, Declaration } from '@/lib/types';
 import { Eye, Layers, Flame, Image as ImageIcon, Loader2, Sparkles } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, getStorageUrl } from '@/lib/api';
+import { ProtectedImg } from '@/components/ProtectedImg';
 
 interface EvidenceViewerProps {
   inspectionId?: string;
@@ -21,17 +22,9 @@ export default function EvidenceViewer({ inspectionId, images, selectedResult, d
   const [hoveredSpan, setHoveredSpan] = useState<{ text: string; confidence: number; x: number; y: number } | null>(null);
 
   const activeImage = images?.[activeImageIndex] || images?.[0];
-  const backendBase = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:8080';
   
   // Format image source URL
-  let imageUrl = activeImage?.file_path || '';
-  if (imageUrl && !imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-    const norm = imageUrl.replace(/\\/g, '/');
-    const idx = norm.indexOf('storage');
-    if (idx !== -1) {
-      imageUrl = `${backendBase}/${norm.substring(idx)}`;
-    }
-  }
+  const imageUrl = getStorageUrl(activeImage?.file_path || '');
 
   // Load heatmap when switching to heatmap view mode
   useEffect(() => {
@@ -143,7 +136,7 @@ export default function EvidenceViewer({ inspectionId, images, selectedResult, d
               className="max-h-[400px] w-auto object-contain rounded-lg border border-red-500/30 shadow-lg block"
             />
           ) : (
-            <img
+            <ProtectedImg
               src={imageUrl}
               alt={`${activeImage?.surface_type} Package Surface`}
               onLoad={(e) => {

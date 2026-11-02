@@ -1,0 +1,16 @@
+{
+  "grid": [
+    32,
+    32
+  ],
+  "image_threshold": 2.4092845797538756,
+  "pixel_threshold": 2.257378578186035,
+  "fit_images": 170,
+  "calibration_images": 43,
+  "coreset_size": 3000,
+  "projection_dim": 192,
+  "seed": 0,
+  "threshold_margin": 1.15,
+  "threshold_source": "held-back good images only",
+  "fit_seconds": 29.62
+}

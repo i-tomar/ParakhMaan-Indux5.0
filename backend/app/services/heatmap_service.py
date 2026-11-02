@@ -89,10 +89,11 @@ class HeatmapService:
     # --- Defect Inspection mode ---
     DEFECT_COLOURS_BGR = {
         "SCRATCH": (222, 117, 0),
-        "CRACK": (30, 56, 217),
-        "DENT": (0, 91, 221),
-        "DISCOLOURATION": (153, 157, 42),
-        "DIMENSIONAL_ANOMALY": (246, 100, 255),
+        "CRACK": (107, 24, 192),
+        "DENT": (0, 122, 224),
+        "DISCOLOURATION": (143, 154, 10),
+        "DIMENSIONAL_ANOMALY": (208, 63, 122),
+        "UNKNOWN_ANOMALY": (18, 122, 109),
     }
 
     def generate_defect_overlay(

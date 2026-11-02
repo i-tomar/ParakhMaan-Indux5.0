@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import verify_password, get_password_hash, create_access_token, decode_access_token
+from app.core.security import verify_and_upgrade, get_password_hash, create_access_token, decode_access_token
 from app.models.all_models import User
 from app.schemas.all_schemas import Token, LoginRequest, UserCreate, UserResponse
 
@@ -14,56 +15,73 @@ def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     if not credentials:
-        # For development/demo convenience, return or create a default inspector if no token passed
-        default_user = db.query(User).filter(User.email == "inspector@gov.in").first()
-        if not default_user:
-            default_user = User(
-                email="inspector@gov.in",
-                full_name="Senior Legal Metrology Inspector",
-                hashed_password=get_password_hash("inspector123"),
-                role="INSPECTOR",
-                badge_number="LM-DL-8821"
-            )
-            db.add(default_user)
-            db.commit()
-            db.refresh(default_user)
-        return default_user
+        if not settings.AUTH_REQUIRED:
+            return _anonymous_operator(db)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
 
-    token = credentials.credentials
-    payload = decode_access_token(token)
+    payload = decode_access_token(credentials.credentials)
     if not payload or "sub" not in payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired authentication credentials"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired authentication credentials")
+
     user = db.query(User).filter(User.id == payload["sub"]).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or disabled")
     return user
+
+
+def _anonymous_operator(db: Session) -> User:
+    """Only reachable with AUTH_REQUIRED=false (local test runs): gets a user with an unusable password."""
+    user = db.query(User).filter(User.email == "operator@local").first()
+    if not user:
+        user = User(email="operator@local", full_name="Local Operator", hashed_password="!", role="ADMIN")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def require_roles(*roles: str):
+    """Route dependency: ADMIN always passes, others must hold one of `roles`."""
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if user.role != "ADMIN" and user.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Requires role: {', '.join(roles)}")
+        return user
+    return checker
+
+
+DEMO_ACCOUNTS = [
+    ("inspector@gov.in", "Quality Inspector", "INSPECTOR"),
+    ("supervisor@gov.in", "Line Supervisor", "SUPERVISOR"),
+    ("admin@gov.in", "Plant Administrator", "ADMIN"),
+]
+
+
+def ensure_demo_accounts(db: Session) -> None:
+    """Creates the demo logins with DEMO_PASSWORD. Does nothing unless DEMO_MODE is on."""
+    if not settings.DEMO_MODE or not settings.DEMO_PASSWORD:
+        return
+    for email, name, role in DEMO_ACCOUNTS:
+        user = db.query(User).filter(User.email == email).first()
+        if user is None:
+            user = User(email=email, full_name=name, role=role, badge_number="DEMO", hashed_password="!")
+            db.add(user)
+        user.hashed_password = get_password_hash(settings.DEMO_PASSWORD)
+    db.commit()
+
 
 @router.post("/login", response_model=Token)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
+    ensure_demo_accounts(db)
     user = db.query(User).filter(User.email == req.email).first()
-    if not user:
-        # If demo user, auto-create for convenience
-        if req.email in ["inspector@gov.in", "supervisor@gov.in", "admin@gov.in"]:
-            role = "SUPERVISOR" if "supervisor" in req.email else ("ADMIN" if "admin" in req.email else "INSPECTOR")
-            user = User(
-                email=req.email,
-                full_name=f"Legal Metrology {role.capitalize()}",
-                hashed_password=get_password_hash(req.password),
-                role=role,
-                badge_number="LM-IND-01"
-            )
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-        else:
-            raise HTTPException(status_code=400, detail="Incorrect email or password")
-    
-    if not verify_password(req.password, user.hashed_password):
+    # Same reply for unknown user and wrong password, so accounts cannot be enumerated.
+    if not user or not user.is_active:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
+    valid, upgraded = verify_and_upgrade(req.password, user.hashed_password)
+    if not valid:
+        raise HTTPException(status_code=400, detail="Incorrect email or password")
+    if upgraded:
+        user.hashed_password = upgraded
+        db.commit()
 
     token = create_access_token(subject=user.id, role=user.role)
     return {
@@ -78,12 +96,13 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
         }
     }
 
+
 @router.post("/register", response_model=UserResponse)
-def register(req: UserCreate, db: Session = Depends(get_db)):
+def register(req: UserCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("ADMIN"))):
     existing = db.query(User).filter(User.email == req.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="User with this email already exists")
-    
+
     user = User(
         email=req.email,
         full_name=req.full_name,
@@ -95,6 +114,7 @@ def register(req: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return user
+
 
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):

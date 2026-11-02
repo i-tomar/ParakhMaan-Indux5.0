@@ -1,42 +1,47 @@
-version: '3.8'
-
+# Copy .env.example to .env first. Secrets have no defaults here, on purpose.
 services:
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: sih26034_backend
+    container_name: parakhmaan_backend
     ports:
       - "8080:8000"
     environment:
-      - SECRET_KEY=sih26034-legal-metrology-secret-2026
-      - DATABASE_URL=sqlite:///storage/legal_metrology.db
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
+      - DEMO_MODE=${DEMO_MODE:-false}
+      - DEMO_PASSWORD=${DEMO_PASSWORD:-}
+      - DATABASE_URL=sqlite:////app/storage/parakhmaan.db
       - STORAGE_DIR=/app/storage
       - REPORTS_DIR=/app/storage/reports
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      - LLM_MODEL=qwen2.5:7b
-      # Defect Inspection mode: hybrid (YOLOv8 ONNX + OpenCV) | opencv | onnx
-      - DEFECT_DETECTOR_BACKEND=hybrid
-      - DEFECT_MODEL_PATH=storage/models/best.onnx
-      - DEFECT_MODEL_CLASSES=scratch,crack,dent,discolouration
       - DEFECT_SAMPLES_DIR=/app/storage/defect_samples
+      - BACKEND_CORS_ORIGINS=http://localhost:3000
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
     volumes:
       - backend_storage:/app/storage
-      # Bind-mounted so the model is present even when backend_storage already exists
-      - ./backend/storage/models:/app/storage/models:ro
+      - ./backend/storage/models:/app/storage/models  # writable: retraining registers new versions here
+      - ./backend/storage/reports:/app/storage/reports
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: sih26034_frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8080/api/v1
+    container_name: parakhmaan_frontend
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

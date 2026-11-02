@@ -1,20 +1,23 @@
 import os
-from fastapi import FastAPI
+import logging
+
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import engine, Base, run_lightweight_migrations
 from app.api import auth, inspections, reviews, reports, dashboard, demo, rag, llm, tools, defects
+from app.api import analytics_api, edge, files, learning, live, metrology_api, production
+from app.models import industrial  # noqa: F401  (registers the manufacturing tables)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
 run_lightweight_migrations()
 
 app = FastAPI(
-    title="Legal Metrology AI Compliance Platform",
-    description="AI-Powered Legal Metrology Compliance & Inspection Platform (SIH26034) with a separate AI & Computer-Vision Product Defect Inspection mode",
-    version="1.0.0",
+    title="ParakhMaan Industrial Visual Inspection Platform",
+    description="AI and computer-vision surface and product defect inspection, with the Legal Metrology rule engine as a separate optional module",
+    version=settings.VERSION,
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -22,53 +25,50 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.BACKEND_CORS_ORIGINS.split(",") if o.strip()],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
-# Serve static storage files (uploaded images and generated PDF reports)
-storage_dir = settings.STORAGE_DIR
-os.makedirs(storage_dir, exist_ok=True)
-app.mount("/storage", StaticFiles(directory=storage_dir), name="storage")
+# Stored images and PDFs are served only through the authenticated /files router. There is
+# deliberately no public static mount: STORAGE_DIR can hold the database, models and part images.
+os.makedirs(settings.STORAGE_DIR, exist_ok=True)
 
-# Include Routers
+# Login is the only unauthenticated API; everything else requires a token.
 app.include_router(auth.router, prefix=settings.API_V1_STR)
-app.include_router(inspections.router, prefix=settings.API_V1_STR)
-app.include_router(reviews.router, prefix=settings.API_V1_STR)
-app.include_router(reports.router, prefix=settings.API_V1_STR)
-app.include_router(dashboard.router, prefix=settings.API_V1_STR)
-app.include_router(demo.router, prefix=settings.API_V1_STR)
-app.include_router(rag.router, prefix=settings.API_V1_STR)
-app.include_router(llm.router, prefix=settings.API_V1_STR)
-app.include_router(tools.router, prefix=settings.API_V1_STR)
-app.include_router(defects.router, prefix=settings.API_V1_STR)
+_protected = [Depends(auth.get_current_user)]
+for module in (inspections, reviews, reports, dashboard, demo, rag, llm, tools, defects,
+               analytics_api, edge, files, learning, metrology_api, production):
+    app.include_router(module.router, prefix=settings.API_V1_STR, dependencies=_protected)
+app.include_router(live.router, prefix=settings.API_V1_STR)  # checks its own token (REST + WebSocket)
 
 @app.get("/api/health")
 def health_check():
-    detector = defects.defect_detector.status()
+    from app.services.inference.engine import engine
+    status = engine.status()
     return {
         "status": "healthy",
-        "service": "Legal Metrology AI Compliance Platform",
+        "service": "ParakhMaan Industrial Inspection (with Legal Metrology module)",
         "version": settings.VERSION,
-        "rule_engine": "ACTIVE (40+ Statutory Rules)",
-        "defect_detector": f"ACTIVE ({detector['backend']}, model {'loaded' if detector['model_loaded'] else 'not loaded'})",
-        "storage": "ONLINE"
+        "rule_engine": "ACTIVE",
+        "segmentation_model": status["segmentation"]["version"] or "NOT LOADED",
+        "anomaly_products": status["anomaly"]["products"],
+        "storage": "ONLINE",
     }
+
 
 @app.on_event("startup")
 def startup_event():
-    # Automatically seed initial demo data for immediate verification
     from app.core.database import SessionLocal
     db = SessionLocal()
     try:
-        demo.seed_demo_data(db)
-    except Exception as e:
-        print(f"Demo seeding error on startup: {e}")
-    try:
-        defects.seed_defect_demo_data(db)
-    except Exception as e:
-        print(f"Defect demo seeding error on startup: {e}")
+        auth.ensure_demo_accounts(db)
+        production.ensure_products_for_models(db)
+        if settings.DEMO_MODE:  # sample records never appear unless demo mode is switched on
+            demo.seed_demo_data(db)
+            defects.seed_defect_demo_data(db)
+    except Exception:
+        logging.getLogger(__name__).exception("Startup seeding failed")
     finally:
         db.close()

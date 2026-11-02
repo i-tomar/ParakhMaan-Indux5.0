@@ -73,3 +73,13 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Datasets, training runs and local environments are never committed
+datasets/
+ml/.venv/
+ml/runs/
+*.pt
+backend/storage/units/
+backend/storage/demo_samples/
+backend/storage/models/anomaly/products/_registry/
+frontend/node_modules/

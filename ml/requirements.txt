@@ -1,0 +1,11 @@
+# Training and evaluation only. Not installed on the edge node.
+torch>=2.5
+torchvision>=0.20
+ultralytics>=8.3
+onnx
+onnxruntime
+onnxslim
+opencv-python-headless<5
+scikit-learn
+scipy
+pandas

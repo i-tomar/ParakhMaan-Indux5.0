@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { DefectDetection } from '@/lib/types';
 import { defectColor, defectLabel } from '@/lib/defects';
+import { ProtectedImg } from '@/components/ProtectedImg';
 
 interface DefectBoxesProps {
   width: number;
@@ -132,8 +133,7 @@ export default function DefectOverlay({ imageUrl, detections, selectedId, onSele
 
       <div className="bg-[#1b1b1b] flex items-center justify-center p-2">
         <div className="relative inline-block max-w-full">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
+          <ProtectedImg
             src={imageUrl}
             alt={caption || 'Inspected surface'}
             className="block max-w-full max-h-[520px] w-auto h-auto"

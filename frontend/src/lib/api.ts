@@ -14,28 +14,94 @@ import {
 } from './types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
-const BACKEND_BASE = API_BASE.replace('/api/v1', '');
 
+/** URL of a stored file behind the authenticated /files API (load it with ProtectedImg or openProtectedFile). */
 export function getStorageUrl(filePath?: string): string {
   if (!filePath) return '';
-  if (filePath.startsWith('http') || filePath.startsWith('data:')) return filePath;
+  if (filePath.startsWith('http') || filePath.startsWith('data:') || filePath.startsWith('blob:')) return filePath;
   const norm = filePath.replace(/\\/g, '/');
-  const idx = norm.indexOf('storage');
-  return idx !== -1 ? `${BACKEND_BASE}/${norm.substring(idx)}` : filePath;
+  const idx = norm.lastIndexOf('/storage/');
+  const rel = idx !== -1 ? norm.substring(idx + '/storage/'.length) : norm.replace(/^storage\//, '');
+  return `${API_BASE}/files/${rel.split('/').map(encodeURIComponent).join('/')}`;
+}
+
+export function isProtectedFileUrl(url: string): boolean {
+  return url.startsWith(`${API_BASE}/files/`);
 }
 
 async function postForm<T>(url: string, formData: FormData): Promise<T> {
   return fetchJson<T>(url, { method: 'POST', body: formData });
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+const TOKEN_KEY = 'parakhmaan_token';
+const USER_KEY = 'parakhmaan_user';
+
+export interface SessionUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+}
+
+function safeStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function getToken(): string | null {
+  return safeStorage()?.getItem(TOKEN_KEY) ?? null;
+}
+
+export function getSessionUser(): SessionUser | null {
+  const raw = safeStorage()?.getItem(USER_KEY);
+  try {
+    return raw ? (JSON.parse(raw) as SessionUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSession(token: string, user: SessionUser): void {
+  safeStorage()?.setItem(TOKEN_KEY, token);
+  safeStorage()?.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearSession(): void {
+  safeStorage()?.removeItem(TOKEN_KEY);
+  safeStorage()?.removeItem(USER_KEY);
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** Opens a protected PDF, which a plain link cannot do because links carry no bearer token. */
+export async function openProtectedFile(url: string): Promise<void> {
+  const res = await fetch(url, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Could not open the file (HTTP ${res.status})`);
+  window.open(URL.createObjectURL(await res.blob()), '_blank');
+}
+
+export { API_BASE };
+
+export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: {
       Accept: 'application/json',
+      ...authHeaders(),
       ...init?.headers,
     },
   });
+
+  if (res.status === 401 && typeof window !== 'undefined' && !url.endsWith('/auth/login')) {
+    clearSession();
+    window.location.href = '/login';
+  }
 
   if (!res.ok) {
     let errorDetail = `HTTP Error ${res.status}: ${res.statusText}`;
@@ -110,6 +176,7 @@ export const api = {
     formData.append('surface_type', surfaceType);
 
     const res = await fetch(`${API_BASE}/inspections/${inspectionId}/images`, {
+      headers: authHeaders(),
       method: 'POST',
       body: formData,
     });
@@ -192,7 +259,7 @@ export const api = {
       reason?: string;
     }
   ): Promise<any> {
-    return fetchJson(`${API_BASE}/reviews/${inspectionId}/review`, {
+    return fetchJson(`${API_BASE}/inspections/${inspectionId}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(actionData),
@@ -201,7 +268,7 @@ export const api = {
 
   // PDF Report URL helper
   getReportUrl(id: string): string {
-    return `${API_BASE}/reports/${id}/report`;
+    return `${API_BASE}/inspections/${id}/report`;
   },
 
   // Inspector Statutory Tools
