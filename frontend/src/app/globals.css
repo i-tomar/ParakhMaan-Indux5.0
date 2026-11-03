@@ -1,24 +1,26 @@
 @import "tailwindcss";
 
 :root {
-  --canvas: #f6f5f4;
+  --canvas: #f8fafc;
   --surface: #ffffff;
+  --surface-raised: #f1f5f9;
   --primary: #0075de;
-  --primary-active: #005bab;
-  --secondary: #213183;
+  --primary-hover: #0060b8;
+  --primary-active: #00509a;
+  --secondary: #0f172a;
   --on-primary: #ffffff;
-  --ink: #000000;
-  --ink-secondary: #31302e;
-  --ink-muted: #615d59;
-  --ink-faint: #a39e98;
-  --hairline: #e6e6e6;
-  
-  --accent-sky: #62aef0;
-  --accent-purple: #d6b6f6;
-  --accent-pink: #ff64c8;
-  --accent-orange: #dd5b00;
-  --accent-teal: #2a9d99;
-  --accent-green: #1aae39;
+  --ink: #0f172a;
+  --ink-secondary: #334155;
+  --ink-muted: #64748b;
+  --ink-faint: #94a3b8;
+  --hairline: #e2e8f0;
+  --hairline-subtle: #f1f5f9;
+
+  --accent-blue: #0284c7;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #ef4444;
+  --accent-purple: #8b5cf6;
 }
 
 body {
@@ -29,23 +31,82 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Notion-style layered elevation */
+/* Modern Industrial Card Elevation */
 .elevation-0 {
   border: 1px solid var(--hairline);
+  background-color: #ffffff;
 }
 
 .elevation-1 {
   border: 1px solid var(--hairline);
+  background-color: #ffffff;
   box-shadow: 
-    rgba(0,0,0,0.01) 0 0.175px 1.041px,
-    rgba(0,0,0,0.02) 0 0.8px 2.925px,
-    rgba(0,0,0,0.027) 0 2.025px 7.847px,
-    rgba(0,0,0,0.04) 0 4px 18px;
+    0 1px 2px 0 rgba(0, 0, 0, 0.03),
+    0 1px 3px 1px rgba(0, 0, 0, 0.02);
+}
+
+.elevation-card {
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  border-radius: 0.875rem;
+  box-shadow: 
+    0 1px 3px 0 rgba(15, 23, 42, 0.04),
+    0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.elevation-card:hover {
+  border-color: rgba(0, 117, 222, 0.3);
+  box-shadow: 
+    0 8px 24px -4px rgba(15, 23, 42, 0.06),
+    0 2px 6px -2px rgba(15, 23, 42, 0.03);
 }
 
 .elevation-2 {
   border: 1px solid var(--hairline);
-  box-shadow: rgba(0, 0, 0, 0.08) 0 20px 45px;
+  background-color: #ffffff;
+  box-shadow: 
+    0 10px 25px -5px rgba(15, 23, 42, 0.08),
+    0 8px 10px -6px rgba(15, 23, 42, 0.04);
+}
+
+/* Pulsing live beacon animation */
+@keyframes beacon-pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+
+.live-beacon {
+  animation: beacon-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes beacon-pulse-rose {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.live-beacon-rose {
+  animation: beacon-pulse-rose 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 /* Custom scrollbars */
@@ -57,6 +118,9 @@ body {
   background: var(--canvas);
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--ink-faint);
+  background: #cbd5e1;
   border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
