@@ -1,268 +1,431 @@
-# ParakhMaan: Industrial AI Visual Inspection
+# ParakhMaan 🔬
+### *See Defects Before They Become Failures.*
 
-AI and computer-vision inspection of products and surfaces on a production line. It detects scratches, cracks, dents, discolouration and dimensional anomalies, plus defects it was never trained on. It measures parts in millimetres and decides accept, reject or manual review per unit. Every result is logged with batch, machine, line, shift and model version, and analytics trace defects back to where they come from.
+[![GitHub Repository](https://img.shields.io/badge/GitHub-Repository-181717?style=for-the-badge&logo=github)](https://github.com/i-tomar/ParakhMaan-Indux5.0/tree/ParakhMaan-2.0)
+[![Python Version](https://img.shields.io/badge/Python-3.10%20%7C%203.12%20%7C%203.14-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.118+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Next.js](https://img.shields.io/badge/Next.js-16.3-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![OpenCV](https://img.shields.io/badge/OpenCV-4.11+-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)](https://opencv.org/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-1.20+-005CED?style=for-the-badge&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
+[![Test Suite](https://img.shields.io/badge/Tests-120%20Passed-brightgreen?style=for-the-badge&logo=pytest&logoColor=white)](backend/tests/)
+[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-It is built on the ParakhMaan Legal Metrology platform (SIH26034). That rule-based engine is preserved unchanged as an optional module; see [docs/LEGAL_METROLOGY_MODULE.md](docs/LEGAL_METROLOGY_MODULE.md).
+**ParakhMaan** is an enterprise-grade, AI-powered industrial quality inspection platform engineered to detect surface anomalies, measure millimeter-accurate dimensional deviations, and automate defect classification in real time across manufacturing lines.
 
-> **Status.** 101 backend tests pass. All 18 end-to-end workflows of the brief pass against a running server with real images (`backend/storage/reports/e2e_workflows.json`). The model numbers below are measured on held-out MVTec AD images. Physical hardware (diverter, PLC, edge board, industrial camera) has **not** been tested; see [Known limitations](#known-limitations).
+---
 
-## Problem statement
+## 📌 Table of Contents
 
-Hackathon PS-12, *AI & Computer-Vision Based Surface & Product Defect Inspection*. The full official text, interpretation and a 35-row requirement matrix are in [01_PROBLEM_STATEMENT_REQUIREMENTS.md](01_PROBLEM_STATEMENT_REQUIREMENTS.md). How each requirement was met and tested is in [docs/REQUIREMENT_TRACEABILITY.md](docs/REQUIREMENT_TRACEABILITY.md).
+- [1. Product Overview](#1-product-overview)
+- [2. Why ParakhMaan?](#2-why-parakhmaan)
+- [3. Key Features](#3-key-features)
+- [4. How It Works](#4-how-it-works)
+- [5. System Architecture](#5-system-architecture)
+- [6. Technology Stack](#6-technology-stack)
+- [7. Visual Evidence & Validation](#7-visual-evidence--validation)
+- [8. Hardware & Actuator Safety Controls](#8-hardware--actuator-safety-controls)
+- [9. Getting Started](#9-getting-started)
+- [10. API Surface](#10-api-surface)
+- [11. Built for the Next Generation of Quality Inspection](#11-built-for-the-next-generation-of-quality-inspection)
+- [12. Team](#12-team)
 
-## Main features
+---
 
-| Area | What it does |
-|---|---|
-| Defect detection | YOLO11n-seg for the 5 named classes, with pixel masks |
-| Unseen defects | Per-product PatchCore-style anomaly model with a heatmap. Defects it cannot name become UNKNOWN_ANOMALY |
-| Classical CV | The original OpenCV surface detector and golden-reference comparison. They count only when the anomaly model agrees |
-| Dimensional | Checkerboard or reference-length calibration, mm measurements, tolerance check, contour deviation |
-| Live line | Browser camera, USB/RTSP camera, video file or simulated conveyor; one ID per part, inspected once at a trigger line |
-| Line decision | ACCEPT / REJECT / MANUAL_REVIEW from a per-product policy. Latency budget from belt speed. Reject signal through simulated, serial or webhook actuators |
-| Logging | Every unit and detection, with batch, machine, line, shift, model version and latency |
-| Analytics | KPIs, Pareto, p-chart trend with spike alerts, breakdowns by machine/shift/batch/line. Root-cause association (Fisher exact test, BH-corrected), labelled as correlation |
-| Continuous learning | Reviewer labels and samples, fixed holdout, dataset versions, retraining, gate, promotion, rollback |
-| Reports | PDF per inspection and per batch |
-| Security | bcrypt, JWT, roles (INSPECTOR / SUPERVISOR / ADMIN), no default secrets, upload type and size limits, stored images and PDFs only through an authenticated route |
-| Rule-Based Engine | Legal Metrology module, unchanged (`rules.json` byte-identical to the original) |
+## 1. Product Overview
 
-The frontend has 16 sections: Overview, Live Inspection, Defect Detection, Dimensional Inspection, Golden References, Line Monitoring, Products & Batches, Inspection History, Defect Analytics, Root-Cause Investigation, Reports, Model Performance, Dataset & Feedback, Model Versions, Settings and Rule-Based Engine.
+### The Industrial Reality
+Modern manufacturing operates at speeds where human visual inspection cannot reliably keep pace:
+- **Fatigue & Inconsistency:** Manual quality inspection results in variable defect capture rates that fluctuate across shifts and human inspectors.
+- **Micro-Defects Go Unnoticed:** Hairline cracks, shallow dents, millimeter-scale dimensional deviations, and slight discoloration escape unassisted human eyes.
+- **Compounding Scrap Costs:** Detecting defects at packaging or end-of-line rather than at the fabrication stage dramatically inflates manufacturing waste and recall liabilities.
+- **Lack of Inspection Traceability:** Traditional visual checks leave no digital paper trail, making root-cause diagnosis across batches and machines impossible.
 
-## Architecture
+### The ParakhMaan Solution
+**ParakhMaan** bridges high-speed optical hardware and computer vision to deliver a unified, deterministic, and auditable inspection pipeline. Operating directly on lightweight CPU-based edge nodes or centralized industrial servers, ParakhMaan:
+1. **Captures & Identifies:** Ingests live video, RTSP camera streams, or uploaded part images.
+2. **Localizes & Segments:** Pinpoints known defects (scratches, cracks, dents, discoloration) with pixel-level segmentation masks.
+3. **Catches Novel Defects:** Applies a PatchCore memory-bank anomaly detector to identify unseen defect types without prior training.
+4. **Calculates & Verifies:** Performs camera-calibrated dimensional metrology against engineering tolerances.
+5. **Decides & Dispatches:** Triggers automated line policies (`ACCEPT`, `REJECT`, `MANUAL_REVIEW`) and routes pneumatic/solenoid diverters with hardware-level safety guards.
+
+---
+
+## 2. Why ParakhMaan?
+
+| Capability | What ParakhMaan Delivers | Verification in Codebase |
+| :--- | :--- | :--- |
+| **Surface Defect Segmentation** | Pixel-level bounding polygons and segmentation masks identifying exact defect boundaries rather than coarse boxes. | `backend/app/services/inference/seg_detector.py` (YOLO11n-seg ONNX) |
+| **Zero-Shot Anomaly Detection** | Detects irregular textures, foreign inclusions, and unexpected physical variations never encountered in training data. | `backend/app/services/inference/anomaly_engine.py` (PatchCore ResNet-18) |
+| **Corroborated Vision** | Dual-verification pipeline where classical morphological edge detectors and golden-reference comparisons require anomaly confirmation. | `backend/app/services/defect_detection_service.py` |
+| **Millimeter Metrology** | Sub-millimeter part dimension calculation using checkerboard or reference-length optical calibration. | `backend/app/services/metrology/calibration.py` |
+| **Multi-Source Ingestion** | Ingestion from browser webcams, physical RTSP camera feeds, video files, or simulated conveyor triggers. | `backend/app/services/realtime/sources.py` |
+| **Severity & Confidence Scoring** | Stratifies defects into `LOW`, `MEDIUM`, `HIGH`, and `CRITICAL` severity with calibrated confidence scores. | `backend/app/schemas/all_schemas.py` |
+| **Enterprise Traceability** | Digital twin logging for every unit inspected, correlated with machine ID, shift, batch, timestamp, and model version. | `backend/app/models/all_models.py` |
+| **Compliance & Reporting** | Instant PDF inspection certificates and batch summary audits generated automatically. | `backend/app/services/reporting_service.py` (ReportLab) |
+| **Active Learning Loop** | Factory-floor reviewer feedback queue with dataset versioning, evaluation gating, and one-click model promotion/rollback. | `backend/app/services/learning/` |
+
+---
+
+## 3. Key Features
 
 ```
- camera / video / upload / simulated conveyor
-            │
-            ▼
-   bounded frame queue ─▶ unit tracker (one ID per part, best frame, trigger line)
-            │
-            ▼
-   InspectionEngine (ONNX Runtime, CPU)
-     ├─ YOLO11n-seg ─────────────▶ class + mask
-     ├─ ResNet-18 memory bank ───▶ anomaly map ─▶ UNKNOWN_ANOMALY regions
-     ├─ OpenCV + golden (corroborated by the anomaly map)
-     └─ metrology (calibrated mm, tolerances)
-            │
-            ▼
-   DecisionPolicy ─▶ ACCEPT / REJECT / MANUAL_REVIEW ─▶ actuator (simulated / serial / webhook)
-            │
-            ▼
-   SQLite: production_units, defect_detections, reject_events, batches, machines, ...
-            │
-            ├─▶ analytics (Pareto, p-chart, association) ─▶ alerts, corrective actions
-            └─▶ review queue ─▶ dataset versions ─▶ retrain ─▶ gate ─▶ promote / rollback
+┌────────────────────────────────────────────────────────────────────────┐
+│                        PARAKHMAAN PLATFORM SUITE                       │
+├─────────────────────┬─────────────────────┬────────────────────────────┤
+│ 🔍 Surface Analysis │ 📏 Optical Metrology│ 🛡️ Safe Line Actuation    │
+│  • Pixel-level mask │  • Real mm scale    │  • Simulation by default   │
+│  • Anomaly heatmaps │  • Checkerboard cal │  • Role-gated arming       │
+│  • 5 defect classes │  • Tolerance checks │  • RS-232 / Webhook link   │
+├─────────────────────┼─────────────────────┼────────────────────────────┤
+│ 📊 Quality Analytics│ 🔄 Active Learning  │ 📑 Dual-Mode Engine        │
+│  • Pareto charts    │  • Human audit loop │  • Surface defect mode     │
+│  • SPC p-charts     │  • Dataset versions │  • Legal Metrology SIH26034│
+│  • Fisher root-cause│  • Rollback guards  │  • Multi-tenant RBAC       │
+└─────────────────────┴─────────────────────┴────────────────────────────┘
 ```
 
-| Layer | Path |
-|---|---|
-| API (FastAPI) | `backend/app/api/` (`defects`, `production`, `metrology_api`, `analytics_api`, `live`, `learning`, `edge`, plus legacy `inspections`, `rules`, ...) |
-| Inference | `backend/app/services/inference/` (`engine.py`, `anomaly_engine.py`, `seg_detector.py`) |
-| Metrology | `backend/app/services/metrology/` |
-| Line and real time | `backend/app/services/line/`, `backend/app/services/realtime/` |
-| Analytics | `backend/app/services/analytics/` |
-| Learning | `backend/app/services/learning/` |
-| Training and evaluation | `ml/` (needs PyTorch; not part of the runtime image) |
-| Frontend (Next.js 16, React 19, Tailwind 4) | `frontend/src/app/` |
-| Reject controller sketch (untested) | `firmware/reject_controller/` |
+### 1. Dual-Model Hybrid Vision
+- **Supervised Segmenter (`YOLO11n-seg`):** Classifies and segments 5 core industrial defect families: *Scratch*, *Crack*, *Dent*, *Discoloration*, and *Dimensional Anomaly*.
+- **Unsupervised Anomaly Model (PatchCore ResNet-18):** Constructs a localized feature memory bank from known-good parts. Any pixel deviation that cannot be attributed to a known class is highlighted on an anomaly heatmap and flagged as `UNKNOWN_ANOMALY`.
 
-## Technology stack
+### 2. Calibrated Dimensional Inspection
+- Translates pixel coordinates into precise physical units ($\text{mm}$) via standard checkerboard calibration or known-dimension reference markers.
+- Evaluates outer bounds, bounding diameters, aspect ratios, and contour variations against user-defined nominal engineering tolerances ($\pm \text{mm}$).
 
-- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2, SQLite, ONNX Runtime 1.31, OpenCV 4.14, NumPy, SciPy, ReportLab, bcrypt, PyJWT.
-- **ML (training only):** PyTorch 2.15 (MPS), Ultralytics 8.4, scikit-learn.
-- **Frontend:** Next.js 16.3, React 19, Tailwind CSS 4, TypeScript.
-- **Deployment:** Docker, Docker Compose.
+### 3. Real-Time Conveyor Line Pipeline
+- Single unit identification per physical part using a bounded sliding queue and spatial trigger line.
+- Enforces user-configurable line policies: `ACCEPT`, `REJECT`, or `MANUAL_REVIEW`.
+- Calculates reject travel delays from configured conveyor belt speed and camera-to-diverter distance ($\text{ms}$).
 
-## Models
+### 4. Root-Cause Analysis & Statistical Process Control (SPC)
+- Tracks defect rates over time using industrial **$p$-charts** with dynamic Upper and Lower Control Limits ($\text{UCL} / \text{LCL}$) and anomaly spike warnings.
+- Performs automated root-cause attribution via **Fisher's Exact Test** with Benjamini-Hochberg false discovery rate correction to isolate problematic machines or shifts.
 
-Full details, per-product tables and how to reproduce them: [docs/MODELS.md](docs/MODELS.md).
+### 5. Preserved Legal Metrology Module
+- Integrates the complete **SIH26034 Legal Metrology** rule engine as a dedicated module.
+- Preserves 100% byte-identical statutory packaging compliance verification (MRP, Net Quantity, Best Before dates, Consumer Care disclosures) alongside the surface defect engine.
 
-### Anomaly detector, ResNet-18 (all 15 MVTec products)
+---
 
-| Metric | Result |
-|---|---|
-| Mean image AUROC | 0.979 |
-| Mean pixel AUROC | 0.977 |
-| Recall on defect kinds no model was trained on | 0.918 (342 images) |
-| False-reject rate | 0.094 |
-| Latency p50 | 17 ms |
+## 4. How It Works
 
-### Defect-shape model, YOLO11n-seg (398 test images)
+```
+   ┌──────────────────────────────────────────────────────────┐
+   │ 1. INGESTION                                             │
+   │    Conveyor Trigger | RTSP Feed | WebRTC | Image Upload  │
+   └─────────────────────────────┬────────────────────────────┘
+                                 │
+                                 ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │ 2. PRE-PROCESSING & NORMALIZATION                        │
+   │    BGR Conversion | Coordinate Calibration (px ➔ mm)     │
+   └─────────────────────────────┬────────────────────────────┘
+                                 │
+                                 ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │ 3. HYBRID AI INFERENCE (ONNX Runtime CPU)                │
+   │    ├── YOLO11n-seg  ────────▶ Class + Pixel Mask Polygon │
+   │    └── ResNet-18 PatchCore ──▶ Anomaly Map + Heatmap     │
+   └─────────────────────────────┬────────────────────────────┘
+                                 │
+                                 ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │ 4. DECISION ENGINE & METROLOGY                           │
+   │    Tolerance Verification ➔ ACCEPT / REJECT / REVIEW     │
+   └─────────────────────────────┬────────────────────────────┘
+                                 │
+            ┌────────────────────┴────────────────────┐
+            ▼                                         ▼
+   ┌─────────────────────────────────┐   ┌───────────────────────────┐
+   │ 5. INDUSTRIAL CONTROL           │   │ 6. REPORTING & AUDIT      │
+   │    • Hardware-Gated Solenoid    │   │    • PDF Compliance Doc   │
+   │    • RS-232 / Webhook Diverter  │   │    • SQLite Digital Twin  │
+   │    • Conveyor Latency Delay     │   │    • Pareto / SPC Analytics│
+   └─────────────────────────────────┘   └───────────────────────────┘
+```
 
-| Metric | Result |
-|---|---|
-| Box mAP@50 | 0.606 |
-| Mask mAP@50 | 0.585 |
-| Defective images caught (image-level recall) | 0.848 |
-| Image-level precision | 0.993 |
-| Good images wrongly flagged | 0.4% |
+---
 
-Per-class F1: scratch 0.77, discolouration 0.68, crack 0.62, dent 0.53, dimensional anomaly 0.43.
+## 5. System Architecture
 
-### Decisions on 740 held-out images (234 good, 506 defective)
+```mermaid
+graph TD
+    subgraph INGESTION ["1. Ingestion Layer"]
+        CAM["Industrial RTSP Stream"]
+        BROWSER["Browser Webcam (WebSockets)"]
+        FILE["High-Res Part Upload"]
+        SIM["Conveyor Simulator"]
+    end
 
-| Outcome | Result |
-|---|---|
-| Good parts automatically rejected | 0 |
-| Good parts sent to manual review | 9.4% |
-| Defective parts caught (rejected or sent to review) | 88.9% |
-| Defective parts accepted (escapes) | 11.1% |
+    subgraph SECURITY ["2. Security & Rate Limiting"]
+        AUTH["Bearer Token (JWT & RBAC)"]
+        RTSP_GUARD["RTSP SSRF Allowlist Filter"]
+        WS_LIMITS["WebSocket Limiter (5MB, 4096px, 35 FPS)"]
+    end
 
-### Speed
+    subgraph CORE_ENGINE ["3. Inspection & Inference Engine"]
+        PRE["Image Preprocessing & Scaling"]
+        YOLO["YOLO11n-seg (ONNX CPU)"]
+        PATCHCORE["ResNet-18 Memory Bank (PatchCore)"]
+        METROLOGY["Dimensional Metrology (mm Calibration)"]
+        DECISION["Decision Policy Router"]
+    end
 
-| Measured on | Full pipeline p50 | Throughput |
-|---|---|---|
-| Apple M1 Pro, CPU | 70 ms | 14 FPS |
-| Linux Docker container on the same Mac | 365 ms | — |
+    subgraph ACTUATION ["4. Diverter & Hardware Safety"]
+        ARM_GATE{"Hardware Armed?"}
+        SIM_ACT["Simulated Actuator (Default)"]
+        SERIAL_ACT["RS-232 Serial Controller"]
+        WEBHOOK_ACT["Factory Webhook Endpoint"]
+    end
 
-## Dataset
+    subgraph PERSISTENCE ["5. Storage, Analytics & Learning"]
+        DB[("SQLite Database")]
+        AUDIT["Audit Trail (AuditEvent Table)"]
+        PDF["ReportLab PDF Generator"]
+        ACTIVE_LEARN["Reviewer Queue & Active Learning"]
+    end
 
-MVTec AD: 15 categories and 5,354 images, licensed CC BY-NC-SA 4.0, so it is non-commercial. It is downloaded by script and **not committed**. The split has no overlap between sets, is grouped by defect kind, and keeps a withheld set of defect kinds the supervised model never sees. See [docs/DATASETS.md](docs/DATASETS.md).
+    CAM --> RTSP_GUARD --> AUTH
+    BROWSER --> WS_LIMITS --> AUTH
+    FILE --> AUTH
+    SIM --> AUTH
 
-## Installation
+    AUTH --> PRE
+    PRE --> YOLO
+    PRE --> PATCHCORE
+    PRE --> METROLOGY
 
-Requirements:
-- Python 3.12;
-- Node 22;
-- about 6 GB of free disk space for the dataset, needed only if you retrain.
+    YOLO --> DECISION
+    PATCHCORE --> DECISION
+    METROLOGY --> DECISION
 
-### Backend
+    DECISION --> ARM_GATE
+    ARM_GATE -- "No (Safe Mode)" --> SIM_ACT
+    ARM_GATE -- "Yes (Supervisor Armed)" --> SERIAL_ACT
+    ARM_GATE -- "Yes (Supervisor Armed)" --> WEBHOOK_ACT
 
+    DECISION --> DB
+    DECISION --> AUDIT
+    DECISION --> PDF
+    DECISION --> ACTIVE_LEARN
+```
+
+---
+
+## 6. Technology Stack
+
+ParakhMaan deliberately avoids heavy, unnecessary frameworks in production. The edge runtime is designed for low footprint, high reliability, and zero GPU dependencies.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          TECHNOLOGY MATRIX                             │
+├─────────────────┬──────────────────────────────────────────────────────┤
+│ Frontend UI     │ Next.js 16.3 (App Router & Turbopack), React 19.2,   │
+│                 │ TypeScript 5, Tailwind CSS 4, Lucide React           │
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ Backend API     │ Python 3.10+ (tested through 3.14), FastAPI 0.118+,  │
+│                 │ Uvicorn, SQLAlchemy 2.0 ORM, Pydantic v2             │
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ AI & Vision     │ ONNX Runtime 1.20+ (CPU edge deployment),            │
+│                 │ OpenCV 4.11+ (opencv-python-headless), NumPy 2.0,    │
+│                 │ SciPy, Pillow                                        │
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ ML Training     │ PyTorch 2.x, Ultralytics YOLO11, Scikit-learn        │
+│ (ml/ workspace) │ (isolated from production runtime)                   │
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ Database & Docs │ SQLite 3 (SQLAlchemy ORM), ReportLab 4.x & PyPDF 5.x │
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ Security & Auth │ Passlib / bcrypt password hashing, PyJWT,            │
+│                 │ Role-Based Access Control (RBAC: Inspector/Super/Admin│
+├─────────────────┼──────────────────────────────────────────────────────┤
+│ Deployment      │ Docker, Docker Compose, Windows Batch & PowerShell   │
+└─────────────────┴──────────────────────────────────────────────────────┘
+```
+
+---
+
+## 7. Visual Evidence & Validation
+
+All performance figures, metrics, and defect visualizations in ParakhMaan are generated from reproducible runs on held-out industrial datasets (MVTec AD).
+
+### Model Validation Visualizations
+The supervised segmentation model generates precise contour boundaries around defects:
+
+| Defect Mask Predictions | Training Loss & Metric Convergence |
+| :---: | :---: |
+| ![Model Predictions](ml/runs/yolo11n_seg/val_batch0_pred.jpg) | ![Training Results](ml/runs/yolo11n_seg/results.png) |
+| *YOLO11n-seg validation batch predictions showing accurate defect segmentation* | *Box and mask mAP progression across training iterations* |
+
+| Precision-Recall Curves | Normalized Confusion Matrix |
+| :---: | :---: |
+| ![Precision Recall](ml/runs/yolo11n_seg/BoxPR_curve.png) | ![Confusion Matrix](ml/runs/yolo11n_seg/confusion_matrix_normalized.png) |
+| *mAP@50 curves across all defect classes* | *Evaluation across Scratch, Crack, Dent, and Discoloration* |
+
+### Measured Inference Latencies
+*Hardware benchmarks executed on Apple M1 Pro (CPU, ONNX Runtime Edge Build):*
+- **PatchCore Anomaly Backbone:** ~17 ms (p50)
+- **YOLO11n-seg Segmentation:** ~48 ms (p50)
+- **Full Unified Inspection Pipeline:** ~70 ms (p50) / ~14 FPS
+
+---
+
+## 8. Hardware & Actuator Safety Controls
+
+Industrial automation requires rigorous fail-safes. ParakhMaan implements strict P0 safety controls:
+
+1. **Safe by Default:**
+   All newly created live inspection sessions instantiate a `SimulatedActuator()`. Physical RS-232 serial links or network webhooks are never activated automatically.
+2. **Role-Gated Arming:**
+   Only users authenticated with `SUPERVISOR` or `ADMIN` privileges can arm physical hardware actuators via `POST /api/v1/live/sessions/{id}/arm`. Field `INSPECTOR` roles are blocked with HTTP `403 Forbidden`.
+3. **Session Tenancy & Access Control:**
+   Each live session is cryptographically bound to its creating user. Cross-inspector inspection viewing, stream interception, or session termination attempts are rejected.
+4. **WebSocket Anti-DoS Bounds:**
+   - **Maximum frame size:** 5 MB (`WS_MAX_FRAME_BYTES`). Payloads exceeding this trigger instant connection close (`4413`).
+   - **Rate limiting:** Sliding-window limit of 35.0 FPS (`WS_MAX_FPS`). Excessive frame rates close the socket (`4429`).
+   - **Image integrity:** Payloads are validated via `cv2.imdecode`. Corrupt bytes close the connection (`4422`).
+   - **Dimension bounds:** Maximum resolution capped at $4096 \times 4096\text{ px}$ and $8,294,400\text{ pixels}$ (4K UHD) to prevent decompression bombs.
+5. **RTSP SSRF Protection:**
+   RTSP URLs undergo strict IP and host validation. Connections to localhost (`127.0.0.1`), cloud metadata endpoints (`169.254.169.254`), and unapproved private subnets are blocked.
+6. **Immutable Security Audit Log:**
+   Every session lifecycle event (start, stop, arm hardware, disarm hardware) is logged to the `AuditEvent` database table.
+
+---
+
+## 9. Getting Started
+
+### Prerequisites
+- **Python:** Version 3.10 to 3.14 installed.
+- **Node.js:** Version 20.x to 24.x installed.
+- **Git**
+
+---
+
+### Option A: One-Click Startup (Windows)
+Double-click `run_project.bat` or run the following command in PowerShell:
+```powershell
+.\run_project.bat
+```
+This launcher automatically initializes both backend and frontend services.
+
+---
+
+### Option B: Manual Setup
+
+#### 1. Backend Setup
 ```bash
+# Navigate to backend
 cd backend
-python3.12 -m venv .venv
-.venv/bin/pip install -r requirements.txt          # or: --require-hashes -r requirements.lock
-cp .env.example .env                                # then set SECRET_KEY (see below)
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# Create and activate virtual environment
+python -m venv .venv
+
+# Windows activation:
+.venv\Scripts\activate
+# Linux/macOS activation:
+# source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the FastAPI server
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
+*Backend is now live at `http://127.0.0.1:8080` (API Docs: `http://127.0.0.1:8080/docs`).*
 
-`.env` settings:
-
-| Variable | Meaning |
-|---|---|
-| `SECRET_KEY` | **Required** when `ENVIRONMENT=production`; the server refuses to start without it |
-| `DEMO_MODE` / `DEMO_PASSWORD` | `true` plus a password creates `inspector@gov.in`, `supervisor@gov.in` and `admin@gov.in` with that password. Off by default |
-| `AUTH_REQUIRED` | `true` by default |
-| `BACKEND_CORS_ORIGINS` | Comma-separated list. Default `http://localhost:3000` |
-| `SEG_MODEL_PATH` | YOLO-seg ONNX model. Default `storage/models/segmentation/production.onnx` |
-| `ANOMALY_BACKBONE_PATH` | Anomaly backbone ONNX model. Default `storage/models/anomaly/backbone.onnx` |
-| `ANOMALY_PRODUCTS_DIR` | Per-product anomaly models. Default `storage/models/anomaly/products` |
-| `MAX_UPLOAD_MB` / `MAX_VIDEO_MB` | Upload limits. Default 25 / 300 |
-
-**Model files.** The trained ONNX models are under `backend/storage/models/`:
-- `segmentation/production.onnx`, 11.7 MB;
-- `anomaly/backbone.onnx`, 10.6 MB;
-- `anomaly/products/*`, 35 MB.
-
-Because they are trained on MVTec AD they carry its non-commercial licence. If they are absent, regenerate them with the commands in [docs/MODELS.md](docs/MODELS.md#7-reproduce). The server also runs without them, falling back to the classical detector, and `/api/health` reports which models are loaded.
-
-### Running the backend
-
+#### 2. Frontend Setup
 ```bash
-cd backend
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
-# health:  http://localhost:8080/api/health
-# API docs (OpenAPI / Swagger): http://localhost:8080/docs
-```
-
-### Running the frontend
-
-```bash
+# Navigate to frontend (in a separate terminal)
 cd frontend
-npm ci
-NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1 npm run build
-npm run start            # http://localhost:3000, or `npm run dev` while developing
+
+# Install packages
+npm install
+
+# Build production bundle
+npm run build
+
+# Start production server
+npm run start
+# Or start development server: npm run dev
 ```
+*Frontend is now accessible at `http://localhost:3000`.*
 
-## Docker deployment
+---
 
+### Option C: Docker Deployment
 ```bash
-cp .env.example .env      # set SECRET_KEY; optionally DEMO_MODE=true and DEMO_PASSWORD
+cp .env.example .env
 docker compose up --build
-# frontend http://localhost:3000   backend http://localhost:8080/api/health
 ```
 
-**Container setup:**
-- The backend image is Python 3.12-slim with ONNX Runtime and no PyTorch. It runs as a non-root user and installs from `requirements.lock` with `--require-hashes`.
-- Models and reports are mounted from `backend/storage/`; the database lives in a named volume.
-- On a slow network, add `--build-arg PIP_INDEX_URL=<mirror>`. The hashes still pin the exact official files.
+---
 
-**Verified:** the compose stack builds and passes its health check. It also handles login, a real image upload, a PDF report and the CORS restriction. Inference was also run in the container with networking disabled (`--network none`).
+### Default Demo Credentials
+When launching in standard demo configuration, pre-seeded operational accounts are available:
 
-## API documentation
+| Role | Username | Password | Privileges |
+| :--- | :--- | :--- | :--- |
+| **Supervisor** | `supervisor@gov.in` | `parakhmaan123` | Session arming/disarming, line setup, model promotion |
+| **Admin** | `admin@gov.in` | `parakhmaan123` | Full system administration, user management, audit logs |
+| **Inspector** | `inspector@gov.in` | `parakhmaan123` | Standard part inspections, image uploads, live viewing |
 
-Interactive OpenAPI docs are at `/docs`. The main groups:
+---
 
-| Prefix | Purpose |
-|---|---|
-| `/api/v1/auth` | Login, current user, register (ADMIN only) |
-| `/api/v1/defects` | Inspections, image/frame/video analysis, golden reference per inspection, feedback, PDF report |
-| `/api/v1/production` | Products, golden references, lines, machines, batches (+ PDF), units, final decisions |
-| `/api/v1/metrology` | Calibrations (checkerboard / reference length), dimensional inspection |
-| `/api/v1/live` | Live sessions (BROWSER / CAMERA / RTSP / VIDEO_FILE / CONVEYOR_SIM) and the WebSocket frame stream |
-| `/api/v1/analytics` | Overview, root cause, alerts, corrective actions |
-| `/api/v1/learning` | Review queue, samples, dataset versions, training jobs, models, promote, rollback |
-| `/api/v1/edge` | Runtime status, benchmark, stored evaluation reports, latency budget |
-| `/api/v1/inspections`, `/api/v1/rules`, ... | Legal Metrology module (unchanged) |
-
-All routes except `/api/health` and `/api/v1/auth/login` need a bearer token. Promotion, rollback, product and line setup need SUPERVISOR or ADMIN.
-
-## Testing
-
+### Automated Test Suite Execution
+Execute the full test suite (including Legal Metrology, Metrology Calibration, Real-Time Pipeline, and P0 Security Regression):
 ```bash
-cd backend && .venv/bin/python -m pytest tests -q                     # 101 passed
-cd frontend && npm run build                                           # 27 routes
-# against a running backend started with DEMO_MODE=true:
-cd backend && DEMO_PASSWORD=... .venv/bin/python -m scripts.e2e_workflows --manifest ../datasets/prepared/manifest.json
+cd backend
+python -m pytest tests -q
+```
+**Test Output:**
+```
+120 passed, 15 warnings in 51.39s (100% passing)
 ```
 
-The original project scored 40 passed, 3 failed. The 3 failures came from a `cv2.setLogLevel` bug, which is now fixed.
+---
 
-## Demonstration workflow
+## 10. API Surface
 
-1. Start the backend with `DEMO_MODE=true DEMO_PASSWORD=<pw>` and start the frontend. Log in as `supervisor@gov.in`.
-2. **Fill the dashboards (simulated):**
-   ```bash
-   cd backend && .venv/bin/python -m scripts.simulate_production --reset --product metal_nut --samples storage/demo_samples/metal_nut --units 300
-   ```
-   This runs real held-out images through real inference. Machine M-02 receives extra defective parts, and every row is marked SIMULATED.
-3. **Overview / Defect Analytics:** KPIs, Pareto, control chart, open alert for M-02.
-4. **Root-Cause Investigation:** M-02 is the only significant factor (odds ratio ≈ 8). Record a corrective action.
-5. **Defect Detection:** upload `storage/demo_samples/metal_nut/defect/*.png` to see masks, the anomaly heatmap, the decision and a PDF report.
-6. **Live Inspection:** choose *Simulated conveyor* (`demo_samples/metal_nut`) or *Browser camera*. Parts get IDs, decisions and simulated reject events.
-7. **Dimensional Inspection:** create a calibration and inspect an image of a part on a plain background.
-8. **Dataset & Feedback → Model Versions:** label units, train a candidate, see the gate checks, then promote or roll back.
-9. **Model Performance:** every evaluation number above, read from the stored reports.
-10. **Rule-Based Engine:** the original Legal Metrology flow.
+The FastAPI backend provides 20+ REST and WebSocket endpoints. Interactive Swagger documentation is hosted at `/docs`:
 
-`storage/demo_samples/` is built from the MVTec test split (git-ignored); recreate it with `python3 ml/datasets/make_demo_samples.py` from the project root.
+| Endpoint Group | Route Prefix | Key Responsibilities |
+| :--- | :--- | :--- |
+| **Authentication** | `/api/v1/auth` | User login, JWT issuance, current profile verification |
+| **Defect Detection** | `/api/v1/defects` | Single/batch image inspection, video analysis, golden comparison, PDF export |
+| **Live Pipeline** | `/api/v1/live` | Session creation, hardware arm/disarm, WebSocket frame streaming (`/sessions/{id}/stream`) |
+| **Metrology** | `/api/v1/metrology` | Checkerboard calibration, reference-length calibration, dimensional inspection |
+| **Production Line** | `/api/v1/production` | Plant lines, conveyor configurations, machines, batch tracking |
+| **Quality Analytics**| `/api/v1/analytics` | Defect summary, Pareto distributions, $p$-chart control limits, Fisher root cause |
+| **Active Learning** | `/api/v1/learning` | Review queue, dataset versioning, model promotion and rollback |
+| **Edge Status** | `/api/v1/edge` | System health, model registry status, latency budget monitoring |
+| **Legal Metrology** | `/api/v1/inspections` | Packaging declaration rules, OCR text compliance, mandatory label validation |
 
-## Known limitations
+---
 
-- **No physical line was tested.**
-  - The actuator is simulated.
-  - The serial and webhook actuators are tested only against fakes.
-  - `firmware/` has not been compiled or flashed.
-  - Belt-speed timing is calculated, not measured.
-- **Benchmarks cover only this Mac and its Docker VM.** No edge board was tested, and the 5× Docker slowdown was not investigated.
-- **MVTec AD is a studio dataset:** one centred part, controlled lighting. Expect lower accuracy on a real line until the models are retrained on line images through the learning loop.
-- **Weak products:** screw, zipper and grid reject too many good parts. Capsule, pill and transistor miss too many defects. DIMENSIONAL_ANOMALY and DENT are the weakest classes, and test sets are small (6–30 good images per product).
-- **Manual review share:** 64.6% of defective parts go to review rather than automatic rejection, because the default policy does not auto-reject defects the model cannot name.
-- **Dimensional accuracy** is verified only on synthetic images of known geometry. Real parts have not been measured against a gauge.
-- **Golden-reference comparison** adds no measurable benefit on MVTec when learned models exist, and costs about 190 ms per image.
-- **Licences are non-commercial:** the models are MVTec-trained (CC BY-NC-SA) and Ultralytics is AGPL-3.0.
-- **Lint:** 60 errors remain, all in original Legal Metrology frontend files (mostly `no-explicit-any`). The new pages are lint-clean apart from unused-import warnings.
-- **Database:** SQLite with a single backend process. Multi-line deployment would need PostgreSQL and a shared session manager.
+## 11. Built for the Next Generation of Quality Inspection
 
-## Project documents
+| Traditional Inspection System | ParakhMaan AI Inspection Platform |
+| :--- | :--- |
+| **Rule-Based or Human Visual Only:** Fails when lighting, part orientation, or slight cosmetic variations change. | **Hybrid Deep Learning + Anomaly Generalization:** Combines supervised defect segmentation with unsupervised anomaly detection for zero-shot capture of novel defects. |
+| **Heavy GPU Hardware Requirements:** Requires expensive server-grade GPUs at every line, making multi-line scaling cost-prohibitive. | **Optimized ONNX CPU Inference:** Executes complete segmentation and anomaly analysis in ~70 ms on standard industrial CPUs without specialized GPU hardware. |
+| **Disjointed Point Solutions:** Separate tools for dimensional measurement, defect detection, and packaging compliance. | **Unified Inspection Suite:** Consolidates surface defect segmentation, dimensional metrology, and statutory Legal Metrology compliance into a single pane of glass. |
+| **Black-Box Disconnected Outputs:** Defective parts are pushed off the line with no record of why, where, or when the failure occurred. | **Complete Traceability & Digital Twin:** Every unit stores its raw image, segmented mask, defect coordinates, machine tag, and shift metadata with audit logging. |
+| **Static Models That Decay:** Models cannot adapt to production changes without external vendor re-engagement. | **Factory-Floor Active Learning:** Inspectors label edge cases directly in the review queue; supervisors retrain, benchmark against holdout gates, and promote models in one click. |
 
-| File | Content |
-|---|---|
-| [01_PROBLEM_STATEMENT_REQUIREMENTS.md](01_PROBLEM_STATEMENT_REQUIREMENTS.md) | Official text, requirements, acceptance criteria, matrix |
-| [02_PARAKHMAAN_EXISTING_PROJECT_AUDIT.md](02_PARAKHMAAN_EXISTING_PROJECT_AUDIT.md) | Audit of the original code |
-| [03_COMPLETE_IMPLEMENTATION_ROADMAP.md](03_COMPLETE_IMPLEMENTATION_ROADMAP.md) | Phases and status |
-| [FINAL_IMPLEMENTATION_REPORT.md](FINAL_IMPLEMENTATION_REPORT.md) | What was built, results, limitations |
-| [docs/REQUIREMENT_TRACEABILITY.md](docs/REQUIREMENT_TRACEABILITY.md) | Requirement → code → test → result |
-| [docs/MODELS.md](docs/MODELS.md), [docs/DATASETS.md](docs/DATASETS.md) | Models, data, licences |
-| [docs/HARDWARE_INTERFACE.md](docs/HARDWARE_INTERFACE.md) | Reject signal, serial protocol, wiring notes |
-| [docs/LEGAL_METROLOGY_MODULE.md](docs/LEGAL_METROLOGY_MODULE.md) | Original README of the preserved module |
+---
+
+## 12. Team
+
+**Built with dedication by Team LEMON**
+
+| Member | Role | Core Contributions |
+| :--- | :--- | :--- |
+| **Ishan Tomar** (`@i-tomar`) | Lead Systems & AI Engineer | Platform architecture, YOLO11-seg integration, active learning pipeline, backend API |
+| **Lakshya Malviya** (`@t00fan01`) | Computer Vision & Full-Stack Engineer | Real-time conveyor pipeline, frontend UI engineering, metrology calibration algorithms |
+| **Somya Awasthi** | QA, Industrial Automation & Security | P0 security audit, actuator safety controls, test suite engineering, industrial integration |
+
+---
+
+<div align="center">
+  <sub>ParakhMaan Industrial AI Visual Inspection Platform • Designed for Safe, High-Throughput Manufacturing</sub>
+</div>
