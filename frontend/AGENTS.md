@@ -1,9 +1,10 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Frontend Design & UI Standards (Impeccable Active)
 
-# This is NOT the Next.js you know
+All UI development in this directory must strictly comply with the **ParakhMaan Design System (PDS v2.0)** defined in `../DESIGN.md`.
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+## Mandatory Frontend Rules:
+1. **Design Tokens:** Use `--canvas`, `--surface`, `--primary`, `--ink`, `--hairline` from `src/app/globals.css`.
+2. **Tabular Numerals:** Always apply `tabular-nums` on metrics, coordinates, timestamps, and percentages.
+3. **Defect Color Coding:** Synchronize strictly with `src/lib/defects.ts` and OpenCV BGR arrays.
+4. **Touch & Glove Ergonomics:** Minimum $40\text{px} \times 40\text{px}$ touch targets for action buttons.
+5. **Low-Distraction Motion:** Restrict transitions to 150ms-200ms `ease-in-out`.

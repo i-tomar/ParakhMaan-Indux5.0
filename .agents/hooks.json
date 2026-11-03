@@ -1,0 +1,17 @@
+{
+  "impeccable-design-guard": {
+    "enabled": true,
+    "PostToolUse": [
+      {
+        "matcher": "replace_file_content|write_to_file|multi_replace_file_content",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node scripts/impeccable-check.js",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

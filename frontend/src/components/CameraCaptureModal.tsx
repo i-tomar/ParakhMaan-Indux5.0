@@ -33,6 +33,8 @@ export default function CameraCaptureModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [surfaceType, setSurfaceType] = useState<string>(defaultSurface);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,9 +50,29 @@ export default function CameraCaptureModal({
   const [liveError, setLiveError] = useState<string | null>(null);
   const hasLive = !!liveAnalyze;
 
+  // Enumerate video devices and prefer physical camera over OBS/Virtual drivers
+  const refreshDevices = async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const cams = all.filter((d) => d.kind === 'videoinput');
+      setVideoDevices(cams);
+      if (cams.length > 0) {
+        setSelectedDeviceId((curr) => {
+          if (curr && cams.some((c) => c.deviceId === curr)) return curr;
+          const physical = cams.find((c) => {
+            const l = (c.label || '').toLowerCase();
+            return !l.includes('obs') && !l.includes('virtual') && !l.includes('screen') && !l.includes('camo') && !l.includes('droid');
+          });
+          return (physical || cams[0]).deviceId;
+        });
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     if (isOpen) {
-      startCamera();
+      refreshDevices().then(() => startCamera());
     } else {
       stopCamera();
       setCapturedImage(null);
@@ -61,7 +83,7 @@ export default function CameraCaptureModal({
     return () => {
       stopCamera();
     };
-  }, [isOpen, facingMode]);
+  }, [isOpen, facingMode, selectedDeviceId]);
 
   useEffect(() => {
     if (!hasLive || !liveOn || !isOpen || capturedImage || cameraError) return;
@@ -115,14 +137,14 @@ export default function CameraCaptureModal({
         throw new Error('Camera access not supported on this browser/environment.');
       }
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: facingMode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      });
+      const constraints: MediaStreamConstraints = {
+        video: selectedDeviceId
+          ? { deviceId: { exact: selectedDeviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+          : { facingMode: facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      };
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
 
       setStream(mediaStream);
       if (videoRef.current) {
@@ -197,10 +219,26 @@ export default function CameraCaptureModal({
           </button>
         </div>
 
-        {/* Surface Selection */}
-        <div className="px-5 py-3 bg-white border-b border-[#e6e6e6] flex items-center justify-between flex-wrap gap-2">
-          <span className="text-xs font-semibold text-[#31302e]">Select Surface to Capture:</span>
-          <div className="flex items-center gap-1.5">
+        {/* Surface and Camera Device Selection */}
+        <div className="px-5 py-2.5 bg-white border-b border-[#e6e6e6] flex items-center justify-between flex-wrap gap-2">
+          {videoDevices.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-[#31302e]">Camera:</span>
+              <select
+                className="text-xs px-2 py-1 rounded border border-[#e6e6e6] bg-white outline-none max-w-[200px]"
+                value={selectedDeviceId}
+                onChange={(e) => setSelectedDeviceId(e.target.value)}
+              >
+                {videoDevices.map((d, i) => (
+                  <option key={d.deviceId || i} value={d.deviceId}>
+                    {d.label || `Camera ${i + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-xs font-semibold text-[#31302e]">Surface:</span>
             {surfaceOptions.map((st) => (
               <button
                 key={st}
