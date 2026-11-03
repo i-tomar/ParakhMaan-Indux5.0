@@ -44,6 +44,9 @@ class SessionConfig:
     frame_queue: int = 8
     crop_pad: float = 0.0
     tracker: Dict[str, Any] = field(default_factory=dict)
+    user_id: Optional[str] = None
+    user_role: Optional[str] = None
+    arm_hardware: bool = False
 
 
 class LiveSession:
@@ -51,6 +54,11 @@ class LiveSession:
         self.id = uuid.uuid4().hex[:12]
         self.config = config
         self.frames = frames
+        self.user_id: Optional[str] = config.user_id
+        self.user_role: Optional[str] = config.user_role
+        self.hardware_armed: bool = False
+        self.armed_by: Optional[str] = None
+        self.armed_at: Optional[float] = None
         self.frame_queue: Deque[np.ndarray] = deque(maxlen=config.frame_queue)
         self.frame_ready = threading.Condition()
         self.unit_queue: "queue.Queue[Any]" = queue.Queue(maxsize=UNIT_QUEUE)
@@ -82,8 +90,17 @@ class LiveSession:
             if self.config.line_id:
                 line = db.get(ProductionLine, self.config.line_id)
                 if line:
-                    self.actuator = build_actuator(line.actuator_kind, line.actuator_target or "")
                     self.budget = latency_budget(line.belt_speed_mm_s, line.camera_to_diverter_mm, line.pitch_mm)
+                    # Actuator defaults to SimulatedActuator unless hardware arming was explicitly authorized
+                    if self.config.arm_hardware:
+                        self.actuator = build_actuator(line.actuator_kind, line.actuator_target or "")
+                        self.hardware_armed = (self.actuator.kind != "SIMULATED")
+                        if self.hardware_armed:
+                            self.armed_by = self.user_id
+                            self.armed_at = time.time()
+                    else:
+                        self.actuator = SimulatedActuator()
+                        self.hardware_armed = False
         finally:
             db.close()
         targets: List[Callable[[], None]] = [self._track_loop, self._inspect_loop]
@@ -94,6 +111,50 @@ class LiveSession:
             t.start()
             self._threads.append(t)
         return self
+
+    def arm_hardware(self, user_id: str) -> Dict[str, Any]:
+        """Arm physical hardware actuator. Requires supervisor/admin privilege."""
+        db = SessionLocal()
+        try:
+            if not self.config.line_id:
+                raise ValueError("Cannot arm hardware: session is not bound to a production line")
+            line = db.get(ProductionLine, self.config.line_id)
+            if not line:
+                raise ValueError("Production line not found")
+            try:
+                self.actuator = build_actuator(line.actuator_kind, line.actuator_target or "")
+            except Exception as e:
+                self.actuator = SimulatedActuator()
+                self.hardware_armed = False
+                raise RuntimeError(f"Failed to initialize actuator '{line.actuator_kind}': {e}")
+            self.hardware_armed = (self.actuator.kind != "SIMULATED")
+            self.armed_by = user_id
+            self.armed_at = time.time()
+            return {
+                "session_id": self.id,
+                "hardware_armed": self.hardware_armed,
+                "actuator": self.actuator.kind,
+                "armed_by": self.armed_by,
+                "armed_at": self.armed_at,
+            }
+        finally:
+            db.close()
+
+    def disarm_hardware(self, user_id: str) -> Dict[str, Any]:
+        """Disarm physical hardware actuator back to simulation mode."""
+        self.actuator = SimulatedActuator()
+        self.hardware_armed = False
+        prev_armed_by = self.armed_by
+        self.armed_by = None
+        self.armed_at = None
+        return {
+            "session_id": self.id,
+            "hardware_armed": False,
+            "actuator": "SIMULATED",
+            "disarmed_by": user_id,
+            "previous_armed_by": prev_armed_by,
+            "at": time.time(),
+        }
 
     def stop(self) -> None:
         self.source_done.set()
@@ -256,6 +317,9 @@ class LiveSession:
             "decisions": dict(self.decisions),
             "throughput_units_min": round(self.units_inspected / elapsed * 60, 1),
             "actuator": self.actuator.kind,
+            "hardware_armed": self.hardware_armed,
+            "armed_by": self.armed_by,
+            "user_id": self.user_id,
             "budget": self.budget,
             "recent": list(self.recent),
             "tracks": self.overlay_rows,

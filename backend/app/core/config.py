@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # CORS: comma separated list, read in main.py
     BACKEND_CORS_ORIGINS: str = os.getenv("BACKEND_CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
+    # Realtime / Live Safety Controls
+    RTSP_ALLOWED_HOSTS: str = os.getenv("RTSP_ALLOWED_HOSTS", "")  # Comma-separated allowlist (hostnames, IPs or CIDRs)
+    WS_MAX_FRAME_BYTES: int = int(os.getenv("WS_MAX_FRAME_BYTES", str(5 * 1024 * 1024)))  # 5 MB
+    WS_MAX_DIMENSION: int = int(os.getenv("WS_MAX_DIMENSION", "4096"))  # 4096px width or height
+    WS_MAX_PIXELS: int = int(os.getenv("WS_MAX_PIXELS", str(3840 * 2160)))  # 4K resolution (8,294,400 pixels)
+    WS_MAX_FPS: float = float(os.getenv("WS_MAX_FPS", "35.0"))  # Max frames per second over WebSocket
+
     class Config:
         case_sensitive = True
         # Real environment variables (docker-compose, shell) take precedence over this file.

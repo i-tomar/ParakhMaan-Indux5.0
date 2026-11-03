@@ -140,7 +140,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    inspection_id = Column(String(36), ForeignKey("inspections.id"), nullable=False)
+    inspection_id = Column(String(36), ForeignKey("inspections.id"), nullable=True)
     user_id = Column(String(36), nullable=True)
     event_type = Column(String(100), nullable=False)  # INSPECTION_CREATED, IMAGE_UPLOADED, OCR_COMPLETED, RULE_EVALUATED, REVIEW_ACTION, FINALIZED
     description = Column(Text, nullable=False)

@@ -676,7 +676,7 @@ class DefectDetector:
             return dets
 
         size = max(rw, rh)
-        for s, e, f, d in defects[:, 0]:
+        for s, e, f, d in defects.reshape(-1, 4):
             depth = d / 256.0
             if depth < 0.04 * size:
                 continue
